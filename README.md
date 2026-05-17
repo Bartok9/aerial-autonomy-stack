@@ -209,12 +209,15 @@ aerial-autonomy-stack
 - [x] [ONNX Runtime 1.23.2](https://github.com/microsoft/onnxruntime/releases)
     - **NOTE: updating to 1.24 from wheel requires switching to Python >3.11/Ubuntu 24**
 
+Transitive constraints:
 ```
-Transitive constraints summary:
-
-Jeton Orin only supports JetPack up to version 6 -> JetPack 6 is based on L4T 36 (Ubuntu 22)
-  -> Ubuntu 22's system Python is version 3.10 -> the last available ONNX Runtime wheel for Python 3.10 is version 1.23.2 -> ONNX Runtime 1.23.2 does not support CUDA 13
-  -> Ubuntu 22's GStreamer apt package is version 1.20 -> GStreamer 1.20's `nvh264enc preset` are no longer supported beyond `nvidia-driver-580`
+Jetson Orin only supports JetPack up to version 6
+  -> JetPack 6 is based on L4T 36 (Ubuntu 22)
+    -> Ubuntu 22's system Python is version 3.10
+      -> the last available ONNX Runtime wheel for Python 3.10 is version 1.23.2
+        -> ONNX Runtime 1.23.2 does not support CUDA 13
+    -> Ubuntu 22's GStreamer apt package is version 1.20
+      -> GStreamer 1.20's `nvh264enc preset` are no longer supported beyond `nvidia-driver-580`
 ```
 
 External repositories:
