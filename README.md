@@ -535,7 +535,7 @@ docker container prune -f             # Remove all stopped containers
 docker network ls                     # List docker networks
 docker network rm <network_name>      # Remove a specific network
 docker network prune -f               # Remove all unused networks
-docker system df                      # Check disk usage by images and cache
+docker system df -v                   # Check disk usage by images and cache (verbose)
 docker system prune                   # Remove stopped containers, unused networks and cache, dangling images
 
 docker images                         # List images
