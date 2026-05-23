@@ -1,7 +1,7 @@
 ################################################################################
 # Import ROS2 layer from aircraft.dockerfile, QGC layer from ground.dockerfile #
 ################################################################################
-FROM transitionary-ros2-qgc-image AS ros2-qgc-image
+FROM transitional-ros2-qgc-image AS ros2-qgc-image
 
 ################################################################################
 # Add Gazebo Sim ###############################################################
