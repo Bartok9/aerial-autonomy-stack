@@ -48,8 +48,7 @@ RUN apt update \
     && rm -rf /var/lib/apt/lists/*
 
 # Add pymavlink and mavproxy to quickly inspect MAVLink streams
-RUN pip3 install --no-cache-dir --upgrade pip \
-    && pip3 install --no-cache-dir --resume-retries 5 pymavlink pyserial mavproxy future
+RUN pip3 install --no-cache-dir --retries 5 pymavlink pyserial mavproxy future
 # Check with $ python3 -c "import pymavlink; print(pymavlink.__version__)"
 
 # Install mavlink-router
@@ -77,9 +76,9 @@ FROM ros2-qgc-gst-mavlink-image AS ground-dev-image
 COPY ground/ground_ws/src /aas/ground_ws/src
 WORKDIR /aas/ground_ws
 RUN rosdep update
-RUN rosdep install --from-paths src/ --ignore-src --rosdistro humble -y && apt clean && rm -rf /var/lib/apt/lists/*
+RUN rosdep install --from-paths src/ --ignore-src --rosdistro jazzy -y && apt clean && rm -rf /var/lib/apt/lists/*
 # Explicitly use bash, not sh, to source and build the workspace
-RUN bash -c "source /opt/ros/humble/setup.bash && (source /aas/github_ws/install/setup.bash || true) && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release"
+RUN bash -c "source /opt/ros/jazzy/setup.bash && (source /aas/github_ws/install/setup.bash || true) && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release"
 
 # Copy resources and configuration files from this repository
 COPY ground/ground_resources/ /aas/ground_resources
@@ -87,7 +86,7 @@ COPY ground/ground_resources/patches/QGroundControl.ini /home/qgcuser/.config/QG
 
 # Source the workspaces
 RUN echo "source /aas/ground_ws/install/setup.bash" >> /root/.bashrc
-# If needed (but already in .bashrc) $ source /opt/ros/humble/setup.bash && source /aas/ground_ws/install/setup.bash
+# If needed (but already in .bashrc) $ source /opt/ros/jazzy/setup.bash && source /aas/ground_ws/install/setup.bash
 
 # Final config
 WORKDIR /aas
