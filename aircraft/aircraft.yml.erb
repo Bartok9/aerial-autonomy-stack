@@ -3,6 +3,7 @@
   headless = ENV.fetch('HEADLESS', 'true') == 'true'
   camera = ENV.fetch('CAMERA', 'true') == 'true'
   lidar = ENV.fetch('LIDAR', 'true') == 'true'
+  odom = ENV.fetch('ODOM', 'none')
 
   sim_subnet = ENV.fetch('SIM_SUBNET', '10.42')
   air_subnet = ENV.fetch('AIR_SUBNET', '10.22')
@@ -22,10 +23,14 @@
 
   gymnasium = ENV.fetch('GYMNASIUM', 'false') == 'true'
 
-  # Load simulated camera parameters from the sensor_config.yaml file
+  # Load sensor information from the sensor_config.yaml file
   require 'yaml'
   sensor_config = YAML.load_file('/aas/aircraft_resources/sensor_config.yaml')
   hfov_deg = sensor_config['sensors']['camera_intrinsics']['horizontal_fov_deg'].to_f
+  stereo_cam = sensor_config['sensors']['camera_intrinsics']['stereo'] == true
+
+  stereo_cam = false unless simulated_time # Stereo camera is for simulation only
+  camera_ids = stereo_cam ? [0, 1] : [0] # In simulation, these will be UDP ports 5600, 5601, etc.
 %>
 
 name: drone
@@ -56,11 +61,29 @@ windows:
       layout: even-horizontal
       panes:
         <% if camera %>
-        - ros2 run yolo_py yolo_py <%= headless ? '--headless' : '' %> <%= hitl ? '--hitl' : '' %> <%= remote_video_streams ? '--remote-video-streams' : '' %> <%= simulated_time ? "--ros-args -p use_sim_time:=true --hfov #{hfov_deg}" : '' %>
+        <% camera_ids.each do |cam_id| %>
+        - until ros2 run yolo_py yolo_py --camera-id <%= cam_id %> <% if odom != 'none' %>--ros2-frame-publisher<% end %> <%= headless ? '--headless' : '' %> <%= hitl ? '--hitl' : '' %> <%= remote_video_streams ? '--remote-video-streams' : '' %> <%= simulated_time ? "--ros-args -p use_sim_time:=true --hfov #{hfov_deg}" : '' %>; do sleep 2; done
+        <% end %>
         <% end %>
         <% if lidar %>
         - ros2 launch kiss_icp odometry.launch.py topic:=/lidar_points <%= headless ? 'visualize:=false' : '' %>
         <% end %>
+
+  <% if odom != 'none' %>
+  - odom:
+      layout: even-horizontal
+      panes:
+        <% case odom %>
+        <% when 'openvins' %>
+        - ros2 launch ov_msckf subscribe.launch.py
+        <% when 'fastlio' %>
+        - ros2 launch spark_fast_lio mapping_vbr_colosseo.launch.yaml
+        - ros2 launch kiss_matcher_ros run_kiss_matcher_sam.launch.yaml
+        <% when 'superodom' %>
+        - ros2 launch super_odometry livox_mid360.launch.py
+        <% end %>
+        - ros2 run imu_publisher imu_publisher --ros-args -p autopilot:=<%= autopilot %> -p drone_id:=<%= drone_id %> <%= simulated_time ? '-p use_sim_time:=true' : '' %>
+  <% end %>
 
   <% if autopilot == 'px4' %>
   - uxrce_dds_and_zenoh:
@@ -76,7 +99,6 @@ windows:
           sudo sed -i '0,/ros__parameters:/s/ros__parameters:/ros__parameters:\n    use_sim_time: true/' /opt/ros/humble/share/mavros/launch/apm_config.yaml && 
           ros2 launch mavros apm.launch fcu_url:=udp://<%= "#{sim_subnet}.90.#{drone_id}" %>:8888@8888 tgt_system:=<%= drone_id %>
           <% else %>
-          python3 /aas/aircraft_resources/patches/request_mavlink_streams.py --device '/dev/ttyTHS1' --baudrate 921600 --target-system <%= drone_id %> --target-component 1 --rate 4 &&
           ros2 launch mavros apm.launch fcu_url:=/dev/ttyTHS1:921600 tgt_system:=<%= drone_id %>
           <% end %>
   <% end %>

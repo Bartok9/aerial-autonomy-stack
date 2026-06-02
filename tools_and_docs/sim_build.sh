@@ -6,11 +6,15 @@ set -e
 # Find the script's path
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-BUILD_ARGS=""
+# By default, skip building advanced odometry, SLAM packages
+BUILD_ADVANCED_ODOM=${EXTRAS:-false}
+
+BUILD_OPTS=""
 if [ "${CLEAN_BUILD:-false}" = "true" ]; then
   rm -rf "${SCRIPT_DIR}/../_github_clones"
-  BUILD_ARGS="--no-cache" # If CLEAN_BUILD is "true", rebuild everything from scratch
-  docker rmi aircraft-image:latest ground-image:latest simulation-image:latest || true
+  BUILD_OPTS="--no-cache" # If CLEAN_BUILD is "true", rebuild everything from scratch
+  docker rmi transitional-ros2-image:latest transitional-ros2-qgc-image:latest \
+    aircraft-image:latest ground-image:latest simulation-image:latest || true
   docker builder prune -f # Remove all dangling build cache to free up space
 fi
 
@@ -36,7 +40,14 @@ REPOS=( # Format: "URL;BRANCH;LOCAL_DIR_NAME"
   # Aircraft image
   "https://github.com/PX4/px4_msgs.git;release/1.17;px4_msgs"
   "https://github.com/eProsima/Micro-XRCE-DDS-Agent.git;master;Micro-XRCE-DDS-Agent"
+  "https://github.com/Livox-SDK/Livox-SDK2.git;master;Livox-SDK2"
+  "https://github.com/Livox-SDK/livox_ros_driver2.git;master;livox_ros_driver2"
   "https://github.com/PRBonn/kiss-icp.git;main;kiss-icp"
+  "https://github.com/rpng/open_vins.git;master;open_vins"
+  "https://github.com/MIT-SPARK/spark-fast-lio.git;main;spark-fast-lio"
+  "https://github.com/MIT-SPARK/KISS-Matcher.git;main;KISS-Matcher"
+  "https://github.com/superxslam/SuperOdom.git;ros2;SuperOdom"
+  "https://github.com/teamspatzenhirn/rviz_2d_overlay_plugins.git;main;rviz_2d_overlay_plugins"
 )
 
 for repo_info in "${REPOS[@]}"; do
@@ -92,12 +103,12 @@ unzip -q -o "$ZIP_FILE" -d "$SCRIPT_DIR/.."
 
 if [ "$BUILD_DOCKER" = "true" ]; then
   # Build common layers reused between images
-  docker build $BUILD_ARGS --target ros2-image -t transitional-ros2-image -f "${SCRIPT_DIR}/docker/aircraft.dockerfile" "${SCRIPT_DIR}/.."
-  docker build $BUILD_ARGS --target ros2-qgc-image -t transitional-ros2-qgc-image -f "${SCRIPT_DIR}/docker/ground.dockerfile" "${SCRIPT_DIR}/.."
-  # Build the 3 main images, the first complete build takes ~40'
-  docker build $BUILD_ARGS -t aircraft-image -f "${SCRIPT_DIR}/docker/aircraft.dockerfile" "${SCRIPT_DIR}/.."
-  docker build $BUILD_ARGS -t ground-image -f "${SCRIPT_DIR}/docker/ground.dockerfile" "${SCRIPT_DIR}/.."
-  docker build $BUILD_ARGS -t simulation-image -f "${SCRIPT_DIR}/docker/simulation.dockerfile" "${SCRIPT_DIR}/.."
+  docker build $BUILD_OPTS --target ros2-image -t transitional-ros2-image -f "${SCRIPT_DIR}/docker/aircraft.dockerfile" "${SCRIPT_DIR}/.."
+  docker build $BUILD_OPTS --target ros2-qgc-image -t transitional-ros2-qgc-image -f "${SCRIPT_DIR}/docker/ground.dockerfile" "${SCRIPT_DIR}/.."
+  # Build the 3 main images
+  docker build $BUILD_OPTS --build-arg BUILD_ADVANCED_ODOM="${BUILD_ADVANCED_ODOM}" -t aircraft-image -f "${SCRIPT_DIR}/docker/aircraft.dockerfile" "${SCRIPT_DIR}/.."
+  docker build $BUILD_OPTS -t ground-image -f "${SCRIPT_DIR}/docker/ground.dockerfile" "${SCRIPT_DIR}/.."
+  docker build $BUILD_OPTS -t simulation-image -f "${SCRIPT_DIR}/docker/simulation.dockerfile" "${SCRIPT_DIR}/.."
 else
   echo -e "Skipping Docker builds"
 fi

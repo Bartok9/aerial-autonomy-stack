@@ -1,3 +1,5 @@
+# Use an ARG to selectively build or skip the advanced odometry, SLAM packages
+ARG BUILD_ADVANCED_ODOM=true
 ################################################################################
 # Pick amd64 (for simulation) or arm64 (on Jetson) image from the NGC Catalog ##
 ################################################################################
@@ -48,7 +50,7 @@ RUN apt update \
 # Install Zenoh ROS2 bridge
 RUN echo "deb [trusted=yes] https://download.eclipse.org/zenoh/debian-repo/ /" | sudo tee -a /etc/apt/sources.list > /dev/null \
     && apt-get update && \
-    apt-get install -y zenoh-bridge-ros2dds \
+    apt-get install -y --no-install-recommends zenoh-bridge-ros2dds \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -88,7 +90,8 @@ FROM ros2-px4msgs-dds-image AS ros2-px4msgs-dds-mavros-image
 
 # MAVROS
 RUN apt-get update && \
-    apt-get install -y ros-humble-mavros ros-humble-mavros-extras ros-humble-mavros-msgs \
+    apt-get install -y --no-install-recommends \
+    ros-humble-mavros ros-humble-mavros-extras ros-humble-mavros-msgs \
     && apt clean \
     && rm -rf /var/lib/apt/lists/* \
     && /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
@@ -129,7 +132,7 @@ RUN python3 -m venv /yolo-env \
 # amd64 stage for ONNX Runtime GPU: from wheel for CUDA support in simulation ##
 # Mutually exclusive with the next stage #######################################
 ################################################################################
-FROM ros2-px4msgs-dds-mavros-yolo-image AS image-with-hardware-specific-ort-deepstream-and-drivers_amd64
+FROM ros2-px4msgs-dds-mavros-yolo-image AS image-with-hardware-specific-ort_amd64
 # Add ONNX Runtime with GPU (CUDA) support for system Python
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir --resume-retries 5 onnxruntime-gpu
@@ -139,7 +142,7 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 # arm64 stage for ONNX Runtime GPU: from source for TensorRT support on Jetson #
 # Mutually exclusive with the previous stage ###################################
 ################################################################################
-FROM ros2-px4msgs-dds-mavros-yolo-image AS image-with-hardware-specific-ort-deepstream-and-drivers_arm64
+FROM ros2-px4msgs-dds-mavros-yolo-image AS image-with-hardware-specific-ort_arm64
 # Build ONNX Runtime from source with Jetson (TensorRT) support for system Python
 # Based on https://onnxruntime.ai/docs/build/eps.html#nvidia-jetson-tx1tx2nanoxavierorin
 # CMAKE_CUDA_ARCHITECTURES=87 based on: https://developer.nvidia.com/cuda-gpus
@@ -196,7 +199,12 @@ RUN apt update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Also install the Livox ROS2 driver only on Orin for deployment
+################################################################################
+# Add odometry packages ########################################################
+################################################################################
+FROM image-with-hardware-specific-ort_${TARGETARCH} AS ros2-px4msgs-dds-mavros-yolo-ort-simple-odom-image
+
+# Install the Livox SDK (SuperOdom requirement)
 COPY /_github_clones/Livox-SDK2 /aas/github_apps/Livox-SDK2
 WORKDIR /aas/github_apps/Livox-SDK2
 RUN mkdir build && cd build && \
@@ -204,21 +212,17 @@ RUN mkdir build && cd build && \
     make -j$(nproc) && \
     make install && \
     ldconfig
+
+# Install the Livox ROS2 driver (SuperOdom requirement), based on https://github.com/Livox-SDK/livox_ros_driver2/blob/master/README.md
+# And https://github.com/Livox-SDK/livox_ros_driver2/blob/master/build.sh
 COPY /_github_clones/livox_ros_driver2 /aas/github_ws/src/livox_ros_driver2
 WORKDIR /aas/github_ws/
-# Based on https://github.com/Livox-SDK/livox_ros_driver2/blob/master/README.md
-# https://github.com/Livox-SDK/livox_ros_driver2/blob/master/build.sh
 RUN cp -f src/livox_ros_driver2/package_ROS2.xml src/livox_ros_driver2/package.xml \
     && cp -rf src/livox_ros_driver2/launch_ROS2 src/livox_ros_driver2/launch
 # Explicitly use bash, not sh, to source and build the workspace
 RUN bash -c "source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-select livox_ros_driver2 --cmake-args -DROS_EDITION=ROS2 -DDISTRO_ROS=humble -DCMAKE_BUILD_TYPE=Release"
 
-################################################################################
-# Add KISS-ICP #################################################################
-################################################################################
-FROM image-with-hardware-specific-ort-deepstream-and-drivers_${TARGETARCH} AS ros2-px4msgs-dds-mavros-yolo-kissicp-zenoh-image
-
-# Install KISS-ICP
+# Install KISS-ICP, based on https://github.com/PRBonn/kiss-icp/blob/main/README.md
 RUN pip3 install --no-cache-dir --upgrade "cmake>=3.24"
 COPY /_github_clones/kiss-icp /aas/github_ws/src/kiss-icp
 WORKDIR /aas/github_ws
@@ -226,16 +230,98 @@ WORKDIR /aas/github_ws
 RUN bash -c "source /opt/ros/humble/setup.bash && colcon build --symlink-install --packages-skip livox_ros_driver2 --cmake-args -DCMAKE_BUILD_TYPE=Release"
 
 ################################################################################
+# Empty branch to skip the build of advanced odometry, SLAM packages ###########
+# Mutually exclusive with the next stage #######################################
+################################################################################
+FROM ros2-px4msgs-dds-mavros-yolo-ort-simple-odom-image AS advanced-odom-false
+# Do nothing
+
+################################################################################
+# Branch including the build of advanced odometry, SLAM packages ###############
+# Mutually exclusive with the previous stage ###################################
+################################################################################
+FROM ros2-px4msgs-dds-mavros-yolo-ort-simple-odom-image AS advanced-odom-true
+
+# Install OpenVINS, based on https://docs.openvins.com/gs-installing.html
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libeigen3-dev libboost-all-dev libceres-dev \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/*
+COPY /_github_clones/open_vins /aas/github_ws/src/open_vins
+WORKDIR /aas/github_ws
+# Explicitly use bash, not sh, to source and build the workspace
+# Limit resource usage to avoid freezes on resource-constrained hosts and using flag --cmake-args -DENABLE_ARUCO_TAGS=OFF (the Jetson base image lacks libopencv-contrib-dev)
+RUN MAKEFLAGS='-j4' NINJAJOBS='-j4' bash -c "source /opt/ros/humble/setup.bash && colcon build --event-handlers console_cohesion+ --packages-select ov_core ov_init ov_msckf ov_eval --cmake-args -DENABLE_ARUCO_TAGS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release"
+
+# Install SPARK-FAST-LIO, based on https://github.com/MIT-SPARK/spark-fast-lio#package-how-to-install
+COPY /_github_clones/spark-fast-lio /aas/github_ws/src/spark-fast-lio
+WORKDIR /aas/github_ws
+# Explicitly use bash, not sh, to source and build the workspace
+RUN bash -c "source /opt/ros/humble/setup.bash && colcon build --packages-up-to spark_fast_lio --cmake-args -DCMAKE_BUILD_TYPE=Release"
+
+# Install SuperOdom dependencies, based on https://github.com/superxslam/SuperOdom#-3-installation
+# Sophus on 2021's commit https://github.com/strasdat/Sophus/commit/97e7161
+WORKDIR /aas/github_apps/
+RUN mkdir Sophus \
+    && wget -qO- https://github.com/strasdat/Sophus/archive/97e7161.tar.gz | tar -xz -C Sophus --strip-components=1 \
+    && cd Sophus \
+    && mkdir build && cd build \
+    && cmake .. -DBUILD_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+    && make -j$(nproc) \
+    && make install
+# gtsam on 2024's commit https://github.com/borglab/gtsam/commit/4abef92, also required by KISS-Matcher
+WORKDIR /aas/github_apps/
+RUN mkdir gtsam \
+    && wget -qO- https://github.com/borglab/gtsam/archive/4abef92.tar.gz | tar -xz -C gtsam --strip-components=1 \
+    && cd gtsam \
+    && mkdir build && cd build \
+    && cmake -DGTSAM_USE_SYSTEM_EIGEN=ON -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 .. \
+    && make -j$(nproc) \
+    && make install
+# f68321e tag is release 2.1.0 https://github.com/ceres-solver/ceres-solver/releases/tag/2.1.0
+WORKDIR /aas/github_apps/
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libgoogle-glog-dev \
+    && apt clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir ceres-solver \
+    && wget -qO- https://github.com/ceres-solver/ceres-solver/archive/f68321e.tar.gz | tar -xz -C ceres-solver --strip-components=1 \
+    && cd ceres-solver \
+    && mkdir build && cd build \
+    && cmake .. \
+    && make -j$(nproc) \
+    && make install
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir --resume-retries 5 rerun-sdk
+# Add rviz_2d_overlay_plugins, based on https://github.com/teamspatzenhirn/rviz_2d_overlay_plugins#rviz_2d_overlay_plugins
+COPY /_github_clones/rviz_2d_overlay_plugins /aas/github_ws/src/rviz_2d_overlay_plugins
+WORKDIR /aas/github_ws
+# Explicitly use bash, not sh, to source and build the workspace
+RUN bash -c "source /opt/ros/humble/setup.bash && colcon build --packages-select rviz_2d_overlay_msgs rviz_2d_overlay_plugins --cmake-args -DCMAKE_BUILD_TYPE=Release"
+
+# Install SuperOdom, based on https://github.com/superxslam/SuperOdom#-3-installation
+COPY /_github_clones/SuperOdom /aas/github_ws/src/SuperOdom
+WORKDIR /aas/github_ws
+# Explicitly use bash, not sh, to source and build the workspace
+RUN bash -c "source /opt/ros/humble/setup.bash && source /aas/github_ws/install/setup.bash && colcon build --packages-up-to super_odometry --cmake-args -DCMAKE_BUILD_TYPE=Release"
+
+# Install KISS-Matcher, based on https://github.com/MIT-SPARK/KISS-Matcher/tree/main/ros#gear-how-to-build--run
+COPY /_github_clones/KISS-Matcher /aas/github_ws/src/KISS-Matcher
+WORKDIR /aas/github_ws
+# Explicitly use bash, not sh, to source and build the workspace, pass CMAKE_POLICY_VERSION_MINIMUM as env var for nested builds
+RUN CMAKE_POLICY_VERSION_MINIMUM=3.5 bash -c "source /opt/ros/humble/setup.bash && colcon build --packages-select kiss_matcher_ros --cmake-args -DCMAKE_BUILD_TYPE=Release"
+
+################################################################################
 # Add analysis tools and YOLO models ###########################################
 ################################################################################
-FROM ros2-px4msgs-dds-mavros-yolo-kissicp-zenoh-image AS ros2-px4msgs-dds-mavros-yolo-kissicp-zenoh-analysis-models-image
+FROM advanced-odom-${BUILD_ADVANCED_ODOM} AS ros2-px4msgs-dds-mavros-yolo-ort-odom-analysis-models-image
 
 # Add pymavlink and PlotJuggler for debugging, testing, and analysis
 RUN pip3 install --no-cache-dir --upgrade pip \
     && pip3 install --no-cache-dir --resume-retries 5 pymavlink pyserial
 # Check with $ python3 -c "import pymavlink; print(pymavlink.__version__)"
 RUN apt-get update && \
-    apt-get install -y ros-humble-plotjuggler \
+    apt-get install -y --no-install-recommends ros-humble-plotjuggler \
     ros-humble-plotjuggler-ros \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
@@ -254,7 +340,7 @@ RUN /yolo-env/bin/python3 -c "from ultralytics import YOLO; YOLO('yolo26n.pt').e
 ################################################################################
 # Copy AAS resources and build AAS ROS2 workspace ##############################
 ################################################################################
-FROM ros2-px4msgs-dds-mavros-yolo-kissicp-zenoh-analysis-models-image AS aircraft-dev-image
+FROM ros2-px4msgs-dds-mavros-yolo-ort-odom-analysis-models-image AS aircraft-dev-image
 
 # Build the ROS 2 workspace (NOTE: also includes ground_system_msgs from the ground_ws)
 COPY ground/ground_ws/src/ground_system_msgs /aas/aircraft_ws/src/ground_system_msgs
