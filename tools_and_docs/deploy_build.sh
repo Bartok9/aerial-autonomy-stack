@@ -8,10 +8,13 @@ set -e
 # Find the script's path
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-BUILD_ARGS=""
+# By default, skip building advanced odometry, SLAM packages
+BUILD_ADVANCED_ODOM=${EXTRAS:-false}
+
+BUILD_OPTS=""
 if [ "${CLEAN_BUILD:-false}" = "true" ]; then
   rm -rf "${SCRIPT_DIR}/../_github_clones"
-  BUILD_ARGS="--no-cache" # If CLEAN_BUILD is "true", rebuild everything from scratch
+  BUILD_OPTS="--no-cache" # If CLEAN_BUILD is "true", rebuild everything from scratch
   docker rmi aircraft-image:latest || true
   docker builder prune -f # Remove all dangling build cache to free up space
 fi
@@ -30,9 +33,14 @@ REPOS=( # Format: "URL;BRANCH;LOCAL_DIR_NAME"
   "https://github.com/microsoft/onnxruntime.git;v1.26.0;onnxruntime" # Only for the deployment build
   "https://github.com/PX4/px4_msgs.git;release/1.17;px4_msgs"
   "https://github.com/eProsima/Micro-XRCE-DDS-Agent.git;master;Micro-XRCE-DDS-Agent"
-  "https://github.com/Livox-SDK/Livox-SDK2.git;master;Livox-SDK2" # Only for the deployment build
-  "https://github.com/Livox-SDK/livox_ros_driver2.git;master;livox_ros_driver2" # Only for the deployment build
+  "https://github.com/Livox-SDK/Livox-SDK2.git;master;Livox-SDK2"
+  "https://github.com/Livox-SDK/livox_ros_driver2.git;master;livox_ros_driver2"
   "https://github.com/PRBonn/kiss-icp.git;main;kiss-icp"
+  "https://github.com/rpng/open_vins.git;master;open_vins"
+  "https://github.com/MIT-SPARK/spark-fast-lio.git;main;spark-fast-lio"
+  "https://github.com/MIT-SPARK/KISS-Matcher.git;main;KISS-Matcher"
+  "https://github.com/superxslam/SuperOdom.git;ros2;SuperOdom"
+  "https://github.com/teamspatzenhirn/rviz_2d_overlay_plugins.git;main;rviz_2d_overlay_plugins"
 )
 
 for repo_info in "${REPOS[@]}"; do
@@ -57,8 +65,7 @@ for repo_info in "${REPOS[@]}"; do
 done
 
 if [ "$BUILD_DOCKER" = "true" ]; then
-  # The first build takes ~50'
-  docker build $BUILD_ARGS -t aircraft-image -f "${SCRIPT_DIR}/docker/aircraft.dockerfile" "${SCRIPT_DIR}/.."
+  docker build $BUILD_OPTS --build-arg BUILD_ADVANCED_ODOM="${BUILD_ADVANCED_ODOM}" -t aircraft-image -f "${SCRIPT_DIR}/docker/aircraft.dockerfile" "${SCRIPT_DIR}/.."
 else
   echo -e "Skipping Docker build"
 fi

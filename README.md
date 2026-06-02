@@ -402,6 +402,7 @@ aerial-autonomy-stack
 │   ├── aircraft_ws
 │   │   └── src
 │   │       ├── autopilot_interface                   # Ardupilot/PX4 high-level actions (Takeoff, Orbit, Offboard, Land)
+│   │       ├── imu_publisher                         # Multiplexer between PX4/DDS and ArduPilot/MAVROS sensor topics
 │   │       ├── mission                               # Orchestrator of the actions in `autopilot_interface`
 │   │       ├── offboard_control                      # Low-level references for the Offboard action in `autopilot_interface`
 │   │       ├── state_sharing                         # Publisher of the `/state_sharing_drone_N` topic broadcasted by Zenoh
@@ -542,7 +543,7 @@ docker system prune                   # Remove stopped containers, unused networ
 docker images                         # List images
 docker image prune                    # Remove untagged images
 docker rmi <image_name_or_id>         # Remove a specific image
-docker builder prune                  # Clear all dangling cache
+docker builder prune --filter "until=24h" # Clear all dangling cache older than 24hrs
 ```
 
 ## Tmux Shortcuts
@@ -553,6 +554,7 @@ tmux attach-session -t [session_name] # Reattach a session
 tmux kill-session -t [session_name]   # Kill a session
 tmux kill-server                      # Kill all sessions
 
+Ctrl + b, then c                      # Add new Tmux bash window
 Ctrl + b, then n, p                   # Move between Tmux windows
 Ctrl + b, then [arrow keys]           # Move between Tmux panes in a window (or use the mouse)
 Ctrl + [, then [arrow keys]           # Enter copy mode (to scroll back in a pane, or simply select-and-drag with the mouse to copy)
