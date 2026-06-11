@@ -1,7 +1,7 @@
 #include "ardupilot_guided.hpp"
 
 ArdupilotGuided::ArdupilotGuided() : Node("ardupilot_guided"),
-    offboard_flag_(0),
+    own_id_(-1), offboard_flag_(0),
     offboard_loop_frequency(10), offboard_loop_count_(0), last_offboard_loop_count_(0),
     lat_(NAN), lon_(NAN), alt_(NAN), alt_ellipsoid_(NAN),
     x_(NAN), y_(NAN), z_(NAN),  vx_(NAN), vy_(NAN), vz_(NAN), ve_(NAN), vn_(NAN), vu_(NAN),
@@ -13,6 +13,16 @@ ArdupilotGuided::ArdupilotGuided() : Node("ardupilot_guided"),
 {
     RCLCPP_INFO(this->get_logger(), "ArduPilot guided referencing!");
     RCLCPP_INFO(this->get_logger(), "namespace: %s", this->get_namespace());
+    // Grab own ID from the namespace
+    std::string ns = this->get_namespace();
+    size_t pos = ns.find("Drone");
+    if (pos != std::string::npos) {
+        try { own_id_ = std::stoi(ns.substr(pos + 5)); }
+        catch (const std::exception&) {}
+    }
+    if (own_id_ == -1) {
+        RCLCPP_ERROR(this->get_logger(), "CRITICAL: Could not parse drone ID from namespace '%s'.", ns.c_str());
+    }
     // Check and log whether simulation time is enabled or not
     if (this->get_parameter("use_sim_time").as_bool()) {
         RCLCPP_INFO(this->get_logger(), "Simulation time is enabled.");
@@ -164,22 +174,29 @@ void ArdupilotGuided::ground_tracks_callback(const ground_system_msgs::msg::Swar
         return;
     }
 
-    // Find label 48
-    constexpr int TARGET_LABEL = 48; // 'o muorto che pparla
+    // Find our own track to see whom the GroundSystem assigned us to
+    auto my_it = std::find_if(ground_tracks_->tracks.begin(), ground_tracks_->tracks.end(),
+                              [this](const auto& track) { return track.id == this->own_id_; });
+    if (my_it == ground_tracks_->tracks.end()) {
+        RCLCPP_WARN_ONCE(get_logger(), "Own track (ID %d) not found in tracks", own_id_);
+        return;
+    }
+    // Get assignment and find its track
+    int assigned_target_id = my_it->label;
     auto target_it = std::find_if(ground_tracks_->tracks.begin(), ground_tracks_->tracks.end(),
-                                  [](const auto& track) { return track.label == TARGET_LABEL; });
+                                  [assigned_target_id](const auto& track) { return track.id == assigned_target_id; });
     if (target_it == ground_tracks_->tracks.end()) {
-        RCLCPP_WARN_ONCE(get_logger(), "Label %d not found in tracks.", TARGET_LABEL);
+        RCLCPP_WARN_ONCE(get_logger(), "Assigned target ID %d not found in tracks.", assigned_target_id);
         return;
     }
     const auto& target_track = *target_it; // Bind a reference without copying
 
-    // Save label 48 velocities
+    // Save target velocities
     target_vn_ = target_track.velocity_n_m_s;
     target_ve_ = target_track.velocity_e_m_s;
     target_vd_ = target_track.velocity_d_m_s;
 
-    // Predict LLA position of label 48
+    // Predict LLA position of target
     constexpr double PREDICTION_TIME_SEC = 0.0; // TODO: enable prediction
     constexpr double ALT_SAFETY_MARGIN = 0.0; // TODO: add vertical separation to avoid collisions
 
@@ -193,7 +210,7 @@ void ArdupilotGuided::ground_tracks_callback(const ground_system_msgs::msg::Swar
                 future_lat, future_lon);
     double future_alt = target_track.altitude_m - (target_track.velocity_d_m_s * PREDICTION_TIME_SEC) + ALT_SAFETY_MARGIN;
 
-    // Compute relative spherical position (bearing, elevation, distance) of label 48 from the ArduPilot vehicle
+    // Compute relative spherical position (bearing, elevation, distance) of the target from the ArduPilot vehicle
     double fw_azi = 0.0, bw_azi = 0.0; // forward and backward azimuth (in degrees, clockwise from North)
     geod.Inverse(own_lat, own_lon, future_lat, future_lon,
                 closing_distance_, fw_azi, bw_azi);

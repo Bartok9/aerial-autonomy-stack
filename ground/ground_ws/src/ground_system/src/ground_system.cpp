@@ -7,14 +7,29 @@ GroundSystem::GroundSystem() : Node("ground_system"), keep_running_(true)
     this->declare_parameter("ip", "0.0.0.0");
     this->declare_parameter("base_port", 18540);
     this->declare_parameter("rate", 10.0);
-    this->declare_parameter("target_id", 0);
+    this->declare_parameter<std::vector<std::string>>("assignments", std::vector<std::string>{});
 
     // Get Parameters
     num_drones_ = this->get_parameter("num_drones").as_int();
     ip_ = this->get_parameter("ip").as_string();
     base_port_ = this->get_parameter("base_port").as_int();
     publish_rate_ = this->get_parameter("rate").as_double();
-    target_id_ = this->get_parameter("target_id").as_int();
+    auto assignment_strings = this->get_parameter("assignments").as_string_array();
+    for (const auto& pair_str : assignment_strings) {
+        size_t delimiter_pos = pair_str.find('-');
+        if (delimiter_pos != std::string::npos) {
+            try {
+                int predator = std::stoi(pair_str.substr(0, delimiter_pos));
+                int prey = std::stoi(pair_str.substr(delimiter_pos + 1));
+                assignments_[predator] = prey;
+                RCLCPP_INFO(this->get_logger(), "Assigned %d to %d", predator, prey);
+            } catch (const std::exception& e) {
+                RCLCPP_WARN(this->get_logger(), "Skipping invalid assignment format: '%s'", pair_str.c_str());
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Missing hyphen in assignment: '%s'", pair_str.c_str());
+        }
+    }
 
     // Random Seed
     rng_.seed(std::random_device()());
@@ -144,7 +159,11 @@ void GroundSystem::publish_swarm_obs()
 
         ground_system_msgs::msg::DroneObs drone_msg;
         drone_msg.id = id;
-        drone_msg.label = (id == target_id_) ? 48 : 0; // The target id is given label 48, 'o muorto che pparla
+        if (assignments_.find(id) != assignments_.end()) {
+            drone_msg.label = assignments_[id]; // Label with the target ID
+        } else {
+            drone_msg.label = 0; // If no assignment exists, default to 0 (unused ID)
+        }
 
         // Add noise
         drone_msg.latitude_deg = add_noise(track.lat, POS_STD_DEV_DEG);
