@@ -117,7 +117,7 @@ TODO
 
 ```sh
 # GPS module
-GPSx_TYPE           1               # Auto, GPS1_TYPE or GPS2_TYPE depending on the JST connector used on the Jetson Baseboard
+GPS1_TYPE           1               # Auto, set SERIAL3_PROTOCOL (GPS1) to -1/None if using the GPS2 port (SERIAL4) on the Jetson Baseboard
 
 # DShot ESCs (Tekko32 F4 45A)
 SERVOx_FUNCTION     0               # Disabled, for SERVO1 to 4, these are channels 1 to 4 on IO PWM
