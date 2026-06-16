@@ -52,8 +52,8 @@ flowchart TB
     Doodle_Lab_Radio ~~~ Telem
 
     GPS[GPS Module]
-    Lidar[Livox 360]
-    Camera[CSI ArduCam]
+    Lidar[Livox Mid-360S]
+    Camera[CSI IMX219 ArduCam]
 
     RC_Rx[R81 Receiver]
     RC[RadioMaster Boxer RC]
