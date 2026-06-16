@@ -117,7 +117,7 @@ TODO
 
 ```sh
 # GPS module
-GPS1_TYPE           1               # Auto, set SERIAL3_PROTOCOL (GPS1) to -1/None if using the GPS2 port (SERIAL4) on the Jetson Baseboard
+GPS1_TYPE           1               # Auto, if using the GPS2 port (SERIAL4) instead of GPS1 (SERIAL3), set SERIAL3_PROTOCOL (GPS1) to -1/None
 
 # DShot ESCs (Tekko32 F4 45A)
 SERVOx_FUNCTION     0               # Disabled, for SERVO1 to 4, these are channels 1 to 4 on IO PWM
@@ -161,7 +161,7 @@ INS_HNTCH_FREQ      40              # Base frequency, lower than the default 80 
 INS_HNTCH_BW        20              # Half of INS_HNTCH_FREQ
 # Check INS_HNTCH_OPTS is set to 0
 
-# In QGC -> Vehicle Configuration -> Radio, calibrate the Radiomaster Boxer RC
+# In QGC -> Vehicle Configuration -> Radio, calibrate the Radiomaster Boxer RC (revise FS_THR_VALUE, if necessary)
 # In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Stabilized/AltHold/Loiter, one for RTL
 # In QGC -> Vehicle Configuration -> Safety, set battery and general failsafes, RTL settings
 # In QGC -> Vehicle Configuration -> Sensors, calibrate accelerometer, level horizon, and compass (outdoors)
