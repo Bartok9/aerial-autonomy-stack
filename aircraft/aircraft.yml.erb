@@ -75,7 +75,7 @@ windows:
       panes:
         <% case odom %>
         <% when 'openvins' %>
-        - ros2 launch ov_msckf subscribe.launch.py
+        - ros2 launch ov_msckf subscribe.launch.py # make monocular
         <% when 'fastlio' %>
         - ros2 launch spark_fast_lio mapping_vbr_colosseo.launch.yaml
         - ros2 launch kiss_matcher_ros run_kiss_matcher_sam.launch.yaml
