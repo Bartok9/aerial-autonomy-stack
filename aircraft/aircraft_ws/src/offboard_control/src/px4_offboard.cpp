@@ -1,12 +1,12 @@
 #include "px4_offboard.hpp"
 
 PX4Offboard::PX4Offboard() : Node("px4_offboard"), 
-    own_id_(-1), offboard_flag_(0),
+    own_id_(-1), offboard_active_(false), active_controller_name_(""), active_controller_func_(nullptr),
     offboard_loop_frequency(50), offboard_loop_count_(0), last_offboard_loop_count_(0),
     lat_(NAN), lon_(NAN), alt_(NAN), alt_ellipsoid_(NAN),
     xy_valid_(false), z_valid_(false), v_xy_valid_(false), v_z_valid_(false), xy_global_(false), z_global_(false),
     x_(NAN), y_(NAN), z_(NAN), heading_(NAN), vx_(NAN), vy_(NAN), vz_(NAN), ref_lat_(NAN), ref_lon_(NAN), ref_alt_(NAN),
-    pose_frame_(-1), velocity_frame_(-1), true_airspeed_m_s_(NAN),
+    pose_frame_(-1), velocity_frame_(-1), true_airspeed_m_s_(NAN), vehicle_type_(-1),
     ground_tracks_(nullptr), yolo_detections_(nullptr),
     traj_ref_east_(NAN), traj_ref_north_(NAN), traj_ref_up_(NAN),
     target_vn_(NAN), target_ve_(NAN), target_vd_(NAN)
@@ -82,6 +82,9 @@ PX4Offboard::PX4Offboard() : Node("px4_offboard"),
     airspeed_validated_sub_ = this->create_subscription<AirspeedValidated>(
         "fmu/out/airspeed_validated_v1", qos_profile_sub, // 10Hz, MESSAGE_VERSION = 1 -> _v1 since 1.17
         std::bind(&PX4Offboard::airspeed_callback, this, std::placeholders::_1), subscriber_options);
+    vehicle_status_sub_ = this->create_subscription<VehicleStatus>(
+        "fmu/out/vehicle_status_v1", qos_profile_sub, // 2Hz, MESSAGE_VERSION = 1 -> _v1 since 1.16
+        std::bind(&PX4Offboard::status_callback, this, std::placeholders::_1), subscriber_options);
 
     // Offboard flag subscriber
     offboard_flag_sub_ = this->create_subscription<autopilot_interface_msgs::msg::OffboardFlag>(
@@ -98,6 +101,14 @@ PX4Offboard::PX4Offboard() : Node("px4_offboard"),
     kiss_odometry_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         "/kiss/odometry", qos_profile_sub, // 10Hz
         std::bind(&PX4Offboard::kiss_odometry_callback, this, std::placeholders::_1), subscriber_options);
+
+    // Controllers map
+    // Examples
+    controller_map_["att-test"] = std::bind(&PX4Offboard::att_ref_test, this, std::placeholders::_1);
+    controller_map_["ctbr-test"] = std::bind(&PX4Offboard::ctbr_ref_test, this, std::placeholders::_1);
+    controller_map_["traj-test"] = std::bind(&PX4Offboard::traj_ref_test, this, std::placeholders::_1);
+    // Custom controllers
+    controller_map_["traj-prv"] = std::bind(&PX4Offboard::traj_ref_predictive_rendezvous, this, std::placeholders::_1);
 }
 
 // Callbacks for subscribers (reentrant group)
@@ -147,10 +158,35 @@ void PX4Offboard::airspeed_callback(const AirspeedValidated::SharedPtr msg)
     std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
     true_airspeed_m_s_ = msg->true_airspeed_m_s;
 }
+void PX4Offboard::status_callback(const VehicleStatus::SharedPtr msg)
+{
+    std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
+    // arming_state_ = msg->arming_state; // DISARMED = 1, ARMED = 2
+    vehicle_type_ = msg->vehicle_type; // ROTARY_WING = 1, FIXED_WING = 2 (ROVER = 3)
+    // is_vtol_ = msg->is_vtol; // bool
+    // is_vtol_tailsitter_ = msg->is_vtol_tailsitter; // bool
+    // in_transition_mode_ = msg->in_transition_mode; // bool
+    // in_transition_to_fw_ = msg->in_transition_to_fw; // bool
+    // pre_flight_checks_pass_ = msg->pre_flight_checks_pass; // bool
+}
 void PX4Offboard::offboard_flag_callaback(const autopilot_interface_msgs::msg::OffboardFlag::SharedPtr msg)
 {
     std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
-    offboard_flag_ = msg->offboard_flag;
+    offboard_active_ = msg->is_active;
+    if (offboard_active_) {
+        if (active_controller_name_ != msg->controller_name) { // Only perform the map lookup if the requested controller has changed
+            active_controller_name_ = msg->controller_name;
+            auto it = controller_map_.find(active_controller_name_);
+            if (it != controller_map_.end()) {
+                active_controller_func_ = it->second; // Cache the controller function
+            } else {
+                active_controller_func_ = nullptr; // Failsafe
+            }
+        }
+    } else { // Clean up when offboard flag is inactive
+        active_controller_name_ = "";
+        active_controller_func_ = nullptr;
+    }
 }
 void PX4Offboard::ground_tracks_callback(const ground_system_msgs::msg::SwarmObs::SharedPtr msg)
 {
@@ -241,11 +277,13 @@ void PX4Offboard::px4_interface_printout_callback()
     RCLCPP_INFO(get_logger(),
                 "\n  Current node time: %.2f seconds\n"
                 "  KISS pos: %.2f %.2f %.2f\n"
-                "  Offboard flag:\t%d\n"
+                "  Offboard active:\t%s\n"
+                "  Controller:\t%s\n"
                 "  Offboard loop rate:\t%.2f Hz",
                 this->get_clock()->now().seconds(),
                 kiss_position_[0], kiss_position_[1], kiss_position_[2],
-                offboard_flag_.load(),
+                offboard_active_ ? "true" : "false",
+                offboard_active_ ? active_controller_name_.c_str() : "None",
                 actual_rate
             );
     std::stringstream ss;
@@ -290,120 +328,136 @@ void PX4Offboard::px4_interface_printout_callback()
 void PX4Offboard::offboard_loop_callback()
 {
     offboard_loop_count_++; // Counter to monitor the rate of the offboard loop (no lock, atomic variable)
-
     std::shared_lock<std::shared_mutex> lock(node_data_mutex_); // Use shared_lock for data reads
+    if (!offboard_active_) {
+        return; // Do not publish anything else if not in OFFBOARD state
+    }
+    if (active_controller_func_ != nullptr) {
+        OffboardControlMode offboard_mode;
+        offboard_mode.timestamp = this->get_clock()->now().nanoseconds() / 1000; // Convert to microseconds
+        active_controller_func_(offboard_mode); // Execute the cached controller, passing the mode by reference (to modify it and copy its timestamp)
+        if (offboard_loop_count_ % std::max(1, (offboard_loop_frequency / 10)) == 0) {
+            offboard_mode_pub_->publish(offboard_mode); // The OffboardControlMode should run at at least 2Hz (~10 in this implementation)
+        }
+    } else {
+        RCLCPP_WARN(get_logger(), "Unknown controller requested: '%s', no reference will be published", active_controller_name_.c_str());
+    }
+}
 
-    uint64_t current_time_us = this->get_clock()->now().nanoseconds() / 1000;  // Convert to microseconds
-    OffboardControlMode offboard_mode;
-    offboard_mode.timestamp = current_time_us;
-    if (offboard_flag_ == 0) {
-        return; // Do not publish anything else if not in an OFFBOARD state
-    // TODO: implement custom offboard control logic here
-    // https://docs.px4.io/v1.17/en/flight_modes/offboard.html
-    } else if (offboard_flag_ == 1) { // Quad attitude reference
-        offboard_mode.attitude = true;
-        VehicleAttitudeSetpoint attitude_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/VehicleAttitudeSetpoint.msg
-        attitude_ref.timestamp = current_time_us;
-        double pitch_rad = -5.0 * M_PI / 180.0; // Pitch to move forward (any duration, drops some altitude)
+// Controllers (reference generators)
+void PX4Offboard::att_ref_test(OffboardControlMode& mode)
+{
+    mode.attitude = true;
+    VehicleAttitudeSetpoint attitude_ref;
+    attitude_ref.timestamp = mode.timestamp;
+    if (vehicle_type_ == 1) { // ROTARY_WING
+        double pitch_rad = -5.0 * M_PI / 180.0; // Negative pitch to move forward (any duration, drops some altitude)
         attitude_ref.q_d[0] = cos(pitch_rad / 2.0); // w
         attitude_ref.q_d[1] = 0;                    // x
         attitude_ref.q_d[2] = sin(pitch_rad / 2.0); // y
         attitude_ref.q_d[3] = 0;                    // z
         attitude_ref.thrust_body = {0.0, 0.0, -0.72};
-        attitude_ref_pub_->publish(attitude_ref);
-    } else if (offboard_flag_ == 2) { // VTOL attitude reference
-        offboard_mode.attitude = true;
-        VehicleAttitudeSetpoint attitude_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/VehicleAttitudeSetpoint.msg
-        attitude_ref.timestamp = current_time_us;
-        double pitch_rad = -30.0 * M_PI / 180.0; // Pitch to dive
+    } else if (vehicle_type_ == 2) { // FIXED_WING
+        double pitch_rad = -30.0 * M_PI / 180.0; // Negative pitch to dive
         attitude_ref.q_d[0] = cos(pitch_rad / 2.0); // w
         attitude_ref.q_d[1] = 0;                    // x
         attitude_ref.q_d[2] = sin(pitch_rad / 2.0); // y
         attitude_ref.q_d[3] = 0;                    // z
         attitude_ref.thrust_body = {0.15, 0.0, 0.0};
-        attitude_ref_pub_->publish(attitude_ref);
-    } else if (offboard_flag_ == 3) { // Quad rates reference
-        offboard_mode.body_rate = true;
-        VehicleRatesSetpoint rates_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/VehicleRatesSetpoint.msg
-        rates_ref.timestamp = current_time_us;
+    } else {
+        RCLCPP_WARN(get_logger(), "Unknown vehicle_type_ %d", vehicle_type_);
+        return;
+    }
+    attitude_ref_pub_->publish(attitude_ref);
+}
+void PX4Offboard::ctbr_ref_test(OffboardControlMode& mode)
+{
+    mode.body_rate = true;
+    VehicleRatesSetpoint rates_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/VehicleRatesSetpoint.msg
+    rates_ref.timestamp = mode.timestamp;
+    if (vehicle_type_ == 1) { // ROTARY_WING
         rates_ref.roll= 0.0;
         rates_ref.pitch = 0.0;
         rates_ref.yaw = 1.0; // Spin on itself (any duration)
         rates_ref.thrust_body = {0.0, 0.0, -0.72};
-        rates_ref_pub_->publish(rates_ref);
-    } else if (offboard_flag_ == 4) { // VTOL rates reference
-        offboard_mode.body_rate = true;
-        VehicleRatesSetpoint rates_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/VehicleRatesSetpoint.msg
-        rates_ref.timestamp = current_time_us;
+    } else if (vehicle_type_ == 2) { // FIXED_WING
         rates_ref.roll= 4.0; // Roll (2sec maneuver 1 roll, 3sec double roll)
         rates_ref.pitch = 0.0;
         rates_ref.thrust_body = {0.39, 0.0, 0.0};
-        rates_ref_pub_->publish(rates_ref);
-    } else if (offboard_flag_ == 5) { // Quad trajectory (position) reference
-        TrajectorySetpoint trajectory_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/TrajectorySetpoint.msg
-        trajectory_ref.acceleration = {NAN, NAN, NAN}; // Unused
-        trajectory_ref.jerk = {NAN, NAN, NAN}; // Unused
-        trajectory_ref.timestamp = current_time_us;
-        offboard_mode.position = true;
-        trajectory_ref.position = {0.0, 0.0, -50.0}; // Home point
-        trajectory_ref.yaw = -3.14; // [-PI:PI]
-        ///////////////////////////////////////////////////////////////////////
-        // Predictive rendez-vous /////////////////////////////////////////////
-        ///////////////////////////////////////////////////////////////////////
-        if (!std::isnan(traj_ref_east_) && !std::isnan(traj_ref_north_) && !std::isnan(traj_ref_up_)) {
-            double dt = std::clamp((this->get_clock()->now() - last_track_time_).seconds(), 0.0, 2.0);
-            double current_north = traj_ref_north_ + (target_vn_ * dt);
-            double current_east  = traj_ref_east_  + (target_ve_ * dt);
-            double current_down  = -traj_ref_up_   + (target_vd_ * dt);
-            trajectory_ref.position = {current_north, current_east, current_down};
-            double d_north = current_north - x_;
-            double d_east  = current_east - y_;
-            trajectory_ref.yaw = std::atan2(d_east, d_north); // [-PI:PI]
-            if (!std::isnan(target_vn_) && !std::isnan(target_ve_) && !std::isnan(target_vd_)) {
-                offboard_mode.velocity = true; // Enable velocity feedforward
-                trajectory_ref.velocity = {target_vn_, target_ve_, target_vd_};
-                double dist_sq = (d_north * d_north) + (d_east * d_east);
-                if (dist_sq > 1.0) {
-                    double vrel_n = target_vn_ - vx_;
-                    double vrel_e = target_ve_ - vy_;
-                    trajectory_ref.yawspeed = (d_north * vrel_e - d_east * vrel_n) / dist_sq;
-                } else {
-                    trajectory_ref.yawspeed = 0.0;
-                }
-            } else {
-                trajectory_ref.velocity = {NAN, NAN, NAN};
-                trajectory_ref.yawspeed = NAN;
-            }
-        } else { // Missing track, stay still
-            offboard_mode.position = false;
-            trajectory_ref.position = {NAN, NAN, NAN}; ;
-            trajectory_ref.yaw = NAN;
-            offboard_mode.velocity = true;
-            trajectory_ref.velocity = {0.0, 0.0, 0.0};
-            trajectory_ref.yawspeed = 0.0;
-        }
-        ///////////////////////////////////////////////////////////////////////
-        ///////////////////////////////////////////////////////////////////////
-        ///////////////////////////////////////////////////////////////////////
-        // offboard_mode.acceleration = true; // Enable acceleration feedforward
-        // trajectory_ref.acceleration = {0.0, 0.0, -5.0};
-        trajectory_ref_pub_->publish(trajectory_ref);
-    } else if (offboard_flag_ == 6) { // VTOL trajectory (velocity) reference
-        TrajectorySetpoint trajectory_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/TrajectorySetpoint.msg
-        trajectory_ref.position = {NAN, NAN, NAN}; // Unused
-        trajectory_ref.acceleration = {NAN, NAN, NAN}; // Unused
-        trajectory_ref.jerk = {NAN, NAN, NAN}; // Unused
-        trajectory_ref.timestamp = current_time_us;
-        offboard_mode.velocity = true;
-        trajectory_ref.velocity = {20.0, 0.0, 0.0};
-        trajectory_ref_pub_->publish(trajectory_ref);
     } else {
-        RCLCPP_WARN(get_logger(), "Unexpected offboard_flag value: %d", offboard_flag_.load());
+        RCLCPP_WARN(get_logger(), "Unknown vehicle_type_ %d", vehicle_type_);
+        return;
     }
-
-    if (offboard_loop_count_ % std::max(1, (offboard_loop_frequency / 10)) == 0) {
-        offboard_mode_pub_->publish(offboard_mode); // The OffboardControlMode should run at at least 2Hz (~10 in this implementation)
+    rates_ref_pub_->publish(rates_ref);
+}
+void PX4Offboard::traj_ref_test(OffboardControlMode& mode)
+{
+    TrajectorySetpoint trajectory_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/TrajectorySetpoint.msg
+    trajectory_ref.timestamp = mode.timestamp;
+    if (vehicle_type_ == 1) { // ROTARY_WING
+        mode.position = true;
+        // mode.acceleration = true; // Enable acceleration feedforward
+        trajectory_ref.position = {0.0, 0.0, -50.0}; // 50m above the home point
+        trajectory_ref.velocity = {NAN, NAN, NAN}; // Unused
+        trajectory_ref.acceleration = {NAN, NAN, NAN}; // Unused
+        trajectory_ref.jerk = {NAN, NAN, NAN}; // Unused
+        trajectory_ref.yaw = -3.14; // [-PI:PI]
+    } else if (vehicle_type_ == 2) { // FIXED_WING
+        mode.velocity = true;
+        trajectory_ref.position = {NAN, NAN, NAN}; // Unused
+        trajectory_ref.velocity = {20.0, 0.0, 0.0};
+        trajectory_ref.acceleration = {NAN, NAN, NAN}; // Unused
+        trajectory_ref.jerk = {NAN, NAN, NAN}; // Unused
+    } else {
+        RCLCPP_WARN(get_logger(), "Unknown vehicle_type_ %d", vehicle_type_);
+        return;
     }
+    trajectory_ref_pub_->publish(trajectory_ref);
+}
+void PX4Offboard::traj_ref_predictive_rendezvous(OffboardControlMode& mode)
+{
+    if (vehicle_type_ != 1) { // Publish nothing if the vehicle is not ROTARY_WING
+        RCLCPP_WARN(get_logger(), "This controller is only for multicopters");
+        return;
+    }
+    mode.position = true;
+    TrajectorySetpoint trajectory_ref; // https://github.com/PX4/px4_msgs/blob/release/1.17/msg/TrajectorySetpoint.msg
+    trajectory_ref.timestamp = mode.timestamp;
+    trajectory_ref.acceleration = {NAN, NAN, NAN}; // Unused
+    trajectory_ref.jerk = {NAN, NAN, NAN}; // Unused
+    if (!std::isnan(traj_ref_east_) && !std::isnan(traj_ref_north_) && !std::isnan(traj_ref_up_)) {
+        double dt = std::clamp((this->get_clock()->now() - last_track_time_).seconds(), 0.0, 2.0);
+        double current_north = traj_ref_north_ + (target_vn_ * dt);
+        double current_east  = traj_ref_east_  + (target_ve_ * dt);
+        double current_down  = -traj_ref_up_   + (target_vd_ * dt);
+        trajectory_ref.position = {current_north, current_east, current_down};
+        double d_north = current_north - x_;
+        double d_east  = current_east - y_;
+        trajectory_ref.yaw = std::atan2(d_east, d_north); // [-PI:PI]
+        if (!std::isnan(target_vn_) && !std::isnan(target_ve_) && !std::isnan(target_vd_)) {
+            mode.velocity = true; // Enable velocity feedforward
+            trajectory_ref.velocity = {target_vn_, target_ve_, target_vd_};
+            double dist_sq = (d_north * d_north) + (d_east * d_east);
+            if (dist_sq > 1.0) {
+                double vrel_n = target_vn_ - vx_;
+                double vrel_e = target_ve_ - vy_;
+                trajectory_ref.yawspeed = (d_north * vrel_e - d_east * vrel_n) / dist_sq;
+            } else {
+                trajectory_ref.yawspeed = 0.0;
+            }
+        } else {
+            trajectory_ref.velocity = {NAN, NAN, NAN};
+            trajectory_ref.yawspeed = NAN;
+        }
+    } else { // Missing track, stay still
+        mode.position = false;
+        trajectory_ref.position = {NAN, NAN, NAN}; ;
+        trajectory_ref.yaw = NAN;
+        mode.velocity = true;
+        trajectory_ref.velocity = {0.0, 0.0, 0.0};
+        trajectory_ref.yawspeed = 0.0;
+    }
+    trajectory_ref_pub_->publish(trajectory_ref);
 }
 
 int main(int argc, char *argv[])
