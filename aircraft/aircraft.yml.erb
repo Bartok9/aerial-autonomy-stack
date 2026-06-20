@@ -108,7 +108,16 @@ windows:
   <% end %>
         - >
           erb /aas/aircraft_resources/comms/zenoh_config_air.json5.erb > /aas/aircraft_resources/comms/zenoh_config_air.json5 &&
-          zenoh-bridge-ros2dds -e tcp/<%= gnd_container ? "#{air_subnet}.90.#{ground_id}" : "#{sim_subnet}.90.#{sim_id}" %>:7447 -c /aas/aircraft_resources/comms/zenoh_config_air.json5
+          <% # Always add the ground station endpoint
+            endpoints = "-e tcp/#{gnd_container ? "#{air_subnet}.90.#{ground_id}" : "#{sim_subnet}.90.#{sim_id}"}:7447"
+            if hitl || !simulated_time # For HITL or real-life, explicitly dial up other drones
+              (1..10).each do |peer_id| # Up to 10 other drones
+                next if peer_id == drone_id # Do not self-dial
+                endpoints += " -e tcp/#{air_subnet}.90.#{peer_id}:7447"
+              end
+            end
+          %>
+          zenoh-bridge-ros2dds <%= endpoints %> -c /aas/aircraft_resources/comms/zenoh_config_air.json5
 
   <% if lidar && !simulated_time %>
   - livox_driver:

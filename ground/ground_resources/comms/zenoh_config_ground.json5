@@ -6,5 +6,10 @@
         subscribers: []
       }
     }
+  },
+  scouting: {
+    multicast: {
+      enabled: true
+    }
   }
 }

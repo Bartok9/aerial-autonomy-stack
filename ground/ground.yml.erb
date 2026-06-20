@@ -64,7 +64,7 @@ windows:
       layout: even-horizontal
       pre: if [ -n "$HOST_INPUT_GID" ]; then groupadd -g "$HOST_INPUT_GID" host_input 2>/dev/null || true; usermod -aG host_input qgcuser; fi
       panes:
-        - zenoh-bridge-ros2dds -c /aas/ground_resources/comms/zenoh_config_ground.json5
+        - zenoh-bridge-ros2dds -l tcp/0.0.0.0:7447 -c /aas/ground_resources/comms/zenoh_config_ground.json5
         <% if headless %>
         - echo "Headless mode, not launching QGroundControl."
         <% else %>
