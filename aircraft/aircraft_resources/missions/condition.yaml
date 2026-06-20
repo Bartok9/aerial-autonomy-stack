@@ -1,5 +1,5 @@
 type: Sequence
-name: "Dynamic Track-Based Routing Mission"
+name: "Conditional_Mission"
 children:
   - action: takeoff
     name: "Takeoff to 20m"
