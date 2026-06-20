@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 import cv2
 import json
+import yaml
 import numpy as np
 import onnxruntime as ort
 import argparse
@@ -34,6 +35,8 @@ class YoloInferenceNode(Node):
         self.udp_port = 5600 + self.camera_id  # 0 -> 5600, 1 -> 5601
         self.fx = None
         self.fy = None
+        self.cx = None
+        self.cy = None
         self.architecture = platform.machine()
         
         # Load classes
@@ -147,19 +150,30 @@ class YoloInferenceNode(Node):
         stream_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         print(f"Stream Resolution: {stream_width}x{stream_height}")
 
-        # Pinhole approximation
+        # Intrinsics Setup
         if self.architecture == 'aarch64' and not self.hitl: # IMX219-200 CSI camera undistorted with nvdewarper
-            vfov_rad = math.radians(98.05) # See imx219_dewarper_config.txt
-            self.fy = (stream_height * 0.5) / math.tan(vfov_rad / 2.0)
-            self.fx = self.fy
-        else: # Simulated camera
+            calib_file = "/aas/aircraft_resources/patches/camera_calibration.yaml"
+            if not os.path.exists(calib_file):
+                raise FileNotFoundError(f"CRITICAL: Camera calibration file not found at {calib_file}.")
+            with open(calib_file, 'r') as f:
+                calib = yaml.safe_load(f)
+                self.fx = calib['fx']
+                self.fy = calib['fy']
+                self.cx = calib['cx']
+                self.cy = calib['cy']
+            print(f"Loaded IMX219 intrinsics from {calib_file}")
+        else: # Pinhole assumption in simulation
+            self.cx = stream_width / 2.0
+            self.cy = stream_height / 2.0
             clipped_hfov = min(self.hfov, 175.0) # Clip for pinhole approximation
-            self.fx = stream_width / (2 * math.tan(math.radians(clipped_hfov) / 2))
+            self.fx = self.cx / math.tan(math.radians(clipped_hfov) / 2.0)
             self.fy = self.fx
-        hfov = math.degrees(2 * math.atan(stream_width / (2 * self.fx)))
-        vfov = math.degrees(2 * math.atan(stream_height / (2 * self.fy)))
-        dfov = math.degrees(2 * math.atan(math.sqrt(stream_width**2 + stream_height**2) / (2 * self.fx)))
-        print(f"DFOV {dfov}deg, HFOV {hfov:.2f}deg, VFOV {vfov:.2f}deg")
+            print(f"Computed simulated camera intrinsics using HFOV {self.hfov}deg")
+        hfov = math.degrees(2 * math.atan(self.cx / self.fx))
+        vfov = math.degrees(2 * math.atan(self.cy / self.fy))
+        dfov = math.degrees(2 * math.atan(math.sqrt(self.cx**2 + self.cy**2) / self.fx))
+        print(f"Intrinsics: cx={self.cx:.2f}, cy={self.cy:.2f}, fx={self.fx:.2f}, fy={self.fy:.2f}")
+        print(f"DFOV {dfov:.2f}deg, HFOV {hfov:.2f}deg, VFOV {vfov:.2f}deg")
 
         # Load YOLO model and runtime
         # Options, from fastest to most accurate, <10MB to >100MB: yolo26n, yolo26s, yolo26m, yolo26l, yolo26x, export in aircraft.dockerfile
@@ -240,7 +254,7 @@ class YoloInferenceNode(Node):
 
             # Publish detections
             if len(boxes) > 0:
-                self.publish_detections(frame.shape, boxes, confidences, class_ids)
+                self.publish_detections(boxes, confidences, class_ids)
 
             # Draw detections on the frame
             if len(boxes) > 0:
@@ -354,18 +368,14 @@ class YoloInferenceNode(Node):
 
         return boxes, confidences, class_ids
 
-    def publish_detections(self, frame_shape, boxes, confidences, class_ids):
-        h, w = frame_shape[:2]
-        w_half = w * 0.5
-        h_half = h * 0.5
-
+    def publish_detections(self, boxes, confidences, class_ids):
         center_x = boxes[:, 0]
         center_y = boxes[:, 1]
         widths   = boxes[:, 2]
         heights  = boxes[:, 3]
 
-        dx = center_x - w_half
-        dy = h_half - center_y
+        dx = center_x - self.cx
+        dy = self.cy - center_y
         # Pinhole approximation
         azimuths = np.degrees(np.arctan(dx / self.fx))
         elevations = np.degrees(np.arctan(dy / self.fy))
@@ -373,7 +383,7 @@ class YoloInferenceNode(Node):
         # Construct Message
         detection_array = Detection2DArray()
         detection_array.header.stamp = self.get_clock().now().to_msg()
-        detection_array.header.frame_id = "camera_frame"
+        detection_array.header.frame_id = f"camera_frame_{self.camera_id}"
 
         for i in range(len(boxes)):
             bbox = BoundingBox2D()

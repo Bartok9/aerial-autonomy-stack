@@ -245,7 +245,9 @@ void ArdupilotGuided::ground_tracks_callback(const ground_system_msgs::msg::Swar
 void ArdupilotGuided::yolo_detections_callback(const vision_msgs::msg::Detection2DArray::SharedPtr msg)
 {
     std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
-    yolo_detections_ = msg; // Save the smart pointer to the latest message
+    if (msg->header.frame_id == "camera_frame_0") { // Only process the primary camera
+        yolo_detections_ = msg; // Save the smart pointer to the latest message
+    }
 }
 
 void ArdupilotGuided::kiss_odometry_callback(const nav_msgs::msg::Odometry::SharedPtr msg)

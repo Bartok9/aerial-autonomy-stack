@@ -167,8 +167,9 @@ class MissionNode(Node):
             self.blackboard.set("airspeed", msg.airspeed)
 
     def yolo_detections_callback(self, msg):
-        with self.data_lock:
-            self.blackboard.set("yolo_detections", msg)
+        if msg.header.frame_id == "camera_frame_0": # Only process the primary camera
+            with self.data_lock:
+                self.blackboard.set("yolo_detections", msg)
 
     def discover_drones_callback(self):
         topic_prefix = '/state_sharing_drone_'
