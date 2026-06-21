@@ -3,6 +3,7 @@ import py_trees
 
 import rclpy
 from action_msgs.msg import GoalStatus
+from geographiclib.geodesic import Geodesic
 
 from autopilot_interface_msgs.action import Takeoff, Land, Orbit, Offboard
 from autopilot_interface_msgs.srv import SetSpeed, SetReposition
@@ -305,12 +306,11 @@ class RepositionBehavior(py_trees.behaviour.Behaviour):
         # 3: Monitor position stabilization
         lat = self.blackboard.get("lat")
         lon = self.blackboard.get("lon")
-        if self.prev_lat is not None and lat is not None:
-            d_lat = abs(lat - self.prev_lat)
-            d_lon = abs(lon - self.prev_lon)
-            if d_lat > 5e-6 or d_lon > 5e-6: # Started moving (change > ~0.5m HARDCODED)
+        if self.prev_lat is not None and self.prev_lon is not None and lat is not None and lon is not None:
+            distance_moved = Geodesic.WGS84.Inverse(self.prev_lat, self.prev_lon, lat, lon)['s12']
+            if distance_moved > 0.5: # Started moving (change between ticks @2Hz > 0.5m)
                 self.has_moved = True
-            if self.has_moved and d_lat < 2e-6 and d_lon < 2e-6: # Stabilized/stopped (change < ~0.2m, HARDCODED)
+            if self.has_moved and distance_moved < 0.2: # Stabilized/stopped (change between ticks @2Hz < 0.2m)
                 self.stable_ticks += 1
             elif self.has_moved:
                 self.stable_ticks = 0

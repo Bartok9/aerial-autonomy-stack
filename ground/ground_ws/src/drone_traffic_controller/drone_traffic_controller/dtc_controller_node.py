@@ -47,9 +47,6 @@ class DTCController(Node):
             if did in self.drones:
                 self.drones[did]['curr'] = (t.latitude_deg, t.longitude_deg)
                 self.drones[did]['alt'] = t.altitude_m
-                if self.drones[did]['home'] is None:
-                    self.drones[did]['home'] = (t.latitude_deg, t.longitude_deg, t.altitude_m)
-                    self.get_logger().info(f"Drone {did} home set.")
 
     def send_cmd(self, drone_id, action, **kwargs):
         payload = {"drone_id": drone_id, "action": action}
@@ -58,8 +55,12 @@ class DTCController(Node):
 
     def loop(self):
         if self.state == 'WAIT_HOMES':
-            if all(d['home'] is not None for d in self.drones.values()):
-                self.get_logger().info("All homes acquired. Commanding takeoffs.")
+            # Check if we have current tracking data for every expected drone
+            if all(d['curr'] is not None for d in self.drones.values()):
+                self.get_logger().info("All drones online. Locking homes and commanding takeoffs.")
+                # Lock in the home position for all drones just before takeoff
+                for did, d in self.drones.items():
+                    d['home'] = (d['curr'][0], d['curr'][1], d['alt'])
                 for did in self.quad_ids:
                     self.send_cmd(did, 'takeoff', alt=self.quad_to_alt)
                 for did in self.vtol_ids:

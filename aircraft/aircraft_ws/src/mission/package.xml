@@ -21,6 +21,7 @@
   <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>py_trees</exec_depend>
   <exec_depend>py_trees_ros</exec_depend>
+  <exec_depend>python3-geographiclib</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
