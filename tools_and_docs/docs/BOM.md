@@ -39,16 +39,17 @@ flowchart TB
         Orin <-->|"TELEM2 / ETH"| 6X
     end
     
-
     subgraph Doodle_Lab_Radio ["Doodle Lab Radio"]
         direction TB
         EvalKit[Evaluation Kit]
         RadioMod[Radio Module]
         EvalKit <-->|" "| RadioMod
     end
+
+    ESCs[4x Tekko32 F4 45A]
+    Jetson_Baseboard -->|"FMU PWM1-4"| ESCs
     
     Telem[Telemetry Radio]
-
     Doodle_Lab_Radio ~~~ Telem
 
     GPS[GPS Module]
@@ -79,10 +80,9 @@ flowchart TB
 
     Matek -- "12V" --> Lidar
 
-    %%%%%%%%%%
-    linkStyle 3 stroke:teal,stroke-width:3px,stroke-dasharray: 8 4;
-    linkStyle 4,5,6,7,16,18 stroke:red,stroke-width:4px;    
-    linkStyle 8,9,10,14,15,17 stroke:blue,stroke-width:3px;
+    linkStyle 4 stroke:teal,stroke-width:3px,stroke-dasharray: 8 4;
+    linkStyle 5,6,7,8,17,19 stroke:red,stroke-width:4px;
+    linkStyle 9,10,11,16,16,18 stroke:blue,stroke-width:3px;
 ```
 
 [kit]:https://holybro.com/collections/x650-kits/products/x650-kits?variant=43994378240189
@@ -105,13 +105,11 @@ flowchart TB
 
 Autopilot parameters for the Holybro X650 kit
 
-<!--
 ### PX4 Configuration
 
 ```sh
 TODO
 ```
--->
 
 ### ArduPilot Configuration
 
@@ -177,3 +175,5 @@ BATT_FS_CRT_ACT    1                # Commands an immediate LAND when either of 
 # In QGC -> Vehicle Configuration -> Flight Safety, set RTL settings
 # In QGC -> Vehicle Configuration -> Sensors, calibrate accelerometer, level horizon, and compass (outdoors)
 ```
+
+For full `.params` files examples, check folder [`params/`](/tools_and_docs/docs/params/)
