@@ -282,7 +282,6 @@ class YoloInferenceNode(Node):
                         "appsrc do-timestamp=true ! video/x-raw, format=BGR ! queue max-size-buffers=2 leaky=downstream ! "
                         "videoconvert ! videorate drop-only=true ! "
                         "video/x-raw, format=BGRx, max-framerate=10/1 ! nvvidconv ! "
-                        # "video/x-raw, format=I420, max-framerate=10/1 ! nvvidconv ! video/x-raw(memory:NVMM), format=NV12 ! "
                         "nvv4l2h265enc maxperf-enable=1 preset-level=1 insert-sps-pps=true idrinterval=30 ! "
                         f"h265parse ! rtph265pay pt=96 config-interval=1 mtu=1400 ! udpsink host={gnd_ip} port={port} sync=false async=false"
                     )
