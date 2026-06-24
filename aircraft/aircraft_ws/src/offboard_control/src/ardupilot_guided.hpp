@@ -13,6 +13,8 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <unordered_map>
+#include <functional>
 
 #include <rclcpp/clock.hpp>
 #include <rclcpp/parameter.hpp>
@@ -31,6 +33,7 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
 
 #include <mavros_msgs/msg/vfr_hud.hpp>
+#include <mavros_msgs/msg/attitude_target.hpp>
 
 #include <nav_msgs/msg/odometry.hpp>
 
@@ -59,11 +62,13 @@ private:
     const GeographicLib::Geodesic& geod = GeographicLib::Geodesic::WGS84();
 
     // Node variables
-    std::atomic<int> offboard_flag_;
+    bool offboard_active_;
+    std::string active_controller_name_;
     int offboard_loop_frequency;
     std::atomic<int> offboard_loop_count_;
     std::atomic<int> last_offboard_loop_count_;
     rclcpp::Time last_offboard_rate_check_time_;
+    int own_id_;
 
     // Callback groups
     rclcpp::CallbackGroup::SharedPtr callback_group_timer_;
@@ -77,6 +82,7 @@ private:
     rclcpp::Subscription<NavSatFix>::SharedPtr mavros_global_position_global_sub_;
     rclcpp::Subscription<Odometry>::SharedPtr mavros_local_position_odom_sub_;
     rclcpp::Subscription<Odometry>::SharedPtr mavros_global_position_local_sub_;
+    rclcpp::Subscription<TwistStamped>::SharedPtr mavros_local_position_vel_local_sub_;
     rclcpp::Subscription<VfrHud>::SharedPtr mavros_vfr_hud_sub_;
 
     // Offboard flag subscriber
@@ -89,7 +95,7 @@ private:
 
     // Subscribers variables
     double lat_, lon_, alt_, alt_ellipsoid_;
-    double x_, y_, z_, vx_, vy_, vz_;
+    double x_, y_, z_, vx_, vy_, vz_, ve_, vn_, vu_;
     double ref_lat_, ref_lon_, ref_alt_;
     std::array<float, 3> position_;
     std::array<float, 4> q_;
@@ -102,13 +108,14 @@ private:
     vision_msgs::msg::Detection2DArray::SharedPtr yolo_detections_;
 
     // Guidance variables
-    double desired_bearing_rad;
-    double desired_elevation_rad_;
-    double closing_distance_;
+    double desired_bearing_rad_, desired_elevation_rad_, closing_distance_;
+    double target_vn_, target_ve_, target_vd_;
+    rclcpp::Time last_track_time_;
 
     // MAVROS publishers
     rclcpp::Publisher<Vector3Stamped>::SharedPtr setpoint_accel_pub_;
     rclcpp::Publisher<TwistStamped>::SharedPtr setpoint_vel_pub_;
+    rclcpp::Publisher<AttitudeTarget>::SharedPtr setpoint_raw_att_pub_;
 
     // Callbacks for timers
     void ardupilot_interface_printout_callback();
@@ -118,6 +125,7 @@ private:
     void global_position_global_sub_callback(const NavSatFix::SharedPtr msg);
     void local_position_odom_callback(const Odometry::SharedPtr msg);
     void global_position_local_callback(const Odometry::SharedPtr msg);
+    void local_position_vel_local_callback(const TwistStamped::SharedPtr msg);
     void vfr_hud_callback(const VfrHud::SharedPtr msg);
 
     // Offboard flag call back
@@ -130,6 +138,16 @@ private:
 
     // Utility
     double normalize_heading(double angle_rad);
+
+    // Controller map and controllers
+    using ControllerFunction = std::function<void()>;
+    std::unordered_map<std::string, ControllerFunction> controller_map_;
+    ControllerFunction active_controller_func_;
+    void att_ref_test();
+    void vel_ref_test();
+    void acc_ref_test();
+    void vel_ref_lead_pursuit();
+    void acc_ref_proportional_navigation();
 };
 
 #endif // OFFBOARD_CONTROL__ARDUPILOT_GUIDED_HPP_

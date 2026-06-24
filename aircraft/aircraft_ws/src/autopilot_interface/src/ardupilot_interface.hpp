@@ -27,6 +27,8 @@
 #include <mavros_msgs/msg/vehicle_info.hpp>
 #include <mavros_msgs/msg/vfr_hud.hpp>
 
+#include <geometry_msgs/msg/twist_stamped.hpp>
+
 #include <mavros_msgs/srv/vehicle_info_get.hpp>
 #include <mavros_msgs/srv/command_bool.hpp>
 #include <mavros_msgs/srv/command_long.hpp>
@@ -56,6 +58,7 @@ using namespace nav_msgs::msg;
 using namespace sensor_msgs::msg;
 using namespace GeographicLib;
 using namespace geographic_msgs::msg;
+using namespace geometry_msgs::msg;
 using namespace std::chrono_literals; // for time literals (e.g. 1s)
 
 enum class ArdupilotInterfaceState {
@@ -91,8 +94,7 @@ enum class ArdupilotInterfaceState {
     VTOL_QRTL_PARAM_SET,
     VTOL_QRTL,
     LANDED,
-    OFFBOARD_VELOCITY,
-    OFFBOARD_ACCELERATION
+    OFFBOARD
 };
 
 class ArdupilotInterface : public rclcpp::Node
@@ -137,6 +139,7 @@ private:
     std::atomic<int> offboard_flag_count_;
     std::atomic<int> last_offboard_flag_count_;
     rclcpp::Time last_offboard_flag_rate_check_time_;
+    std::string active_offboard_controller_name_;
 
     // Callback groups
     rclcpp::CallbackGroup::SharedPtr callback_group_timer_;
@@ -152,6 +155,7 @@ private:
     rclcpp::Subscription<NavSatFix>::SharedPtr mavros_global_position_global_sub_;
     rclcpp::Subscription<Odometry>::SharedPtr mavros_local_position_odom_sub_;
     rclcpp::Subscription<Odometry>::SharedPtr mavros_global_position_local_sub_;
+    rclcpp::Subscription<TwistStamped>::SharedPtr mavros_local_position_vel_local_sub_;
     rclcpp::Subscription<VfrHud>::SharedPtr mavros_vfr_hud_sub_;
     rclcpp::Subscription<HomePosition>::SharedPtr mavros_home_position_home_sub_;
     rclcpp::Subscription<State>::SharedPtr mavros_state_sub_;
@@ -172,7 +176,7 @@ private:
     bool armed_flag_;
     std::string ardupilot_mode_;
     double lat_, lon_, alt_, alt_ellipsoid_;
-    double x_, y_, z_, vx_, vy_, vz_;
+    double x_, y_, z_, vx_, vy_, vz_, ve_, vn_, vu_;
     double ref_lat_, ref_lon_, ref_alt_;
     std::array<float, 3> position_;
     std::array<float, 4> q_;
@@ -204,6 +208,7 @@ private:
     void global_position_global_sub_callback(const NavSatFix::SharedPtr msg);
     void local_position_odom_callback(const Odometry::SharedPtr msg);
     void global_position_local_callback(const Odometry::SharedPtr msg);
+    void local_position_vel_local_callback(const TwistStamped::SharedPtr msg);
     void vfr_hud_callback(const VfrHud::SharedPtr msg);
     void home_position_home_callback(const HomePosition::SharedPtr msg);
     void state_callback(const State::SharedPtr msg);

@@ -3,12 +3,20 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+# Enable starting the aircraft container from SSH
+if [[ -n "$SSH_CLIENT" ]]; then
+  export DISPLAY=":0"
+  export XAUTHORITY="/run/user/1000/gdm/Xauthority"
+  echo "SSH session detected, setting DISPLAY=$DISPLAY and XAUTHORITY=$XAUTHORITY"
+  AAS_SSH_OPTS="--volume $XAUTHORITY:$XAUTHORITY:ro --env XAUTHORITY=$XAUTHORITY"
+fi
+
 # Set up the aircraft
 AUTOPILOT="${AUTOPILOT:-px4}" # Options: px4 (default), ardupilot
 HEADLESS="${HEADLESS:-true}" # Options: true (default), false 
 CAMERA="${CAMERA:-true}" # Options: true (default), false
 LIDAR="${LIDAR:-true}" # Options: true (default), false
-ODOM="${ODOM:-none}" # Options: none (default), openvins, fastlio, superodom
+ODOM="${ODOM:-none}" # Options: none (default), openvins, fastlio, superodom, mimosa
 #
 SIM_SUBNET="${SIM_SUBNET:-10.42}" # Simulation subnet (default = 10.42)
 AIR_SUBNET="${AIR_SUBNET:-10.22}" # Inter-vehicle subnet (default = 10.22)
@@ -45,6 +53,7 @@ if [[ "$GROUND" == "true" ]]; then
     --net=host \
     --privileged \
     --name ground-container \
+    --volume ~/Downloads/:/mounted_downloads_folder \
     ground-image
   exit 0
 fi
@@ -94,7 +103,9 @@ docker run $DOCKER_RUN_FLAGS \
   --net=host \
   --privileged \
   --name aircraft-container_$DRONE_ID \
+  --volume ~/Downloads/:/mounted_downloads_folder \
   ${DEV_OPTS} \
+  ${AAS_SSH_OPTS} \
   aircraft-image
 
 # Check ONNX runtimes

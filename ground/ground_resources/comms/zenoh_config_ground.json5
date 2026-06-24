@@ -2,9 +2,14 @@
   plugins: {
     ros2dds: {
       allow: {
-        publishers: ["/tracks"],
+        publishers: ["/tracks", "/dtc_commands"],
         subscribers: []
       }
+    }
+  },
+  scouting: {
+    multicast: {
+      enabled: true
     }
   }
 }

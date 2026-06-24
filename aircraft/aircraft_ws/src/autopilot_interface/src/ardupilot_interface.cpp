@@ -2,11 +2,12 @@
 
 ArdupilotInterface::ArdupilotInterface() : Node("ardupilot_interface"),
     active_srv_or_act_flag_(false), aircraft_fsm_state_(ArdupilotInterfaceState::STARTED),
-    offboard_flag_frequency(10), offboard_flag_count_(0), last_offboard_flag_count_(0),
+    active_offboard_controller_name_(""), offboard_flag_frequency(10), offboard_flag_count_(0), last_offboard_flag_count_(0),
     target_system_id_(-1), mav_state_(-1), mav_type_(-1),
     armed_flag_(false), ardupilot_mode_(""),
     lat_(NAN), lon_(NAN), alt_(NAN), alt_ellipsoid_(NAN),
-    x_(NAN), y_(NAN), z_(NAN),  vx_(NAN), vy_(NAN), vz_(NAN), ref_lat_(NAN), ref_lon_(NAN), ref_alt_(NAN),
+    x_(NAN), y_(NAN), z_(NAN),  vx_(NAN), vy_(NAN), vz_(NAN), ve_(NAN), vn_(NAN), vu_(NAN),
+    ref_lat_(NAN), ref_lon_(NAN), ref_alt_(NAN),
     true_airspeed_m_s_(NAN), heading_(NAN),
     home_lat_(NAN), home_lon_(NAN), home_alt_(NAN)
 {
@@ -68,6 +69,9 @@ ArdupilotInterface::ArdupilotInterface() : Node("ardupilot_interface"),
     mavros_global_position_local_sub_ = this->create_subscription<Odometry>(
         "/mavros/global_position/local", qos_profile_sub, // 10Hz
         std::bind(&ArdupilotInterface::global_position_local_callback, this, std::placeholders::_1), subscriber_options);
+    mavros_local_position_vel_local_sub_ = this->create_subscription<TwistStamped>(
+        "/mavros/local_position/velocity_local", qos_profile_sub, // 10Hz
+        std::bind(&ArdupilotInterface::local_position_vel_local_callback, this, std::placeholders::_1), subscriber_options);
     mavros_vfr_hud_sub_ = this->create_subscription<VfrHud>(
         "/mavros/vfr_hud", qos_profile_sub, // 10Hz
         std::bind(&ArdupilotInterface::vfr_hud_callback, this, std::placeholders::_1), subscriber_options);
@@ -153,10 +157,18 @@ void ArdupilotInterface::global_position_local_callback(const Odometry::SharedPt
     x_ = msg->pose.pose.position.y;  // N <- E
     y_ = msg->pose.pose.position.x;  // E <- N
     z_ = -msg->pose.pose.position.z; // D <- -U
-    // Velocity (ENU -> NED)
+    // Velocity (ENU -> NED), NOTE: PX4's vx_, vy_, vz_ map to vn_, ve_, -vu_ instead
     vx_ = msg->twist.twist.linear.y;  // N <- E
     vy_ = msg->twist.twist.linear.x;  // E <- N
     vz_ = -msg->twist.twist.linear.z; // D <- -U
+}
+void ArdupilotInterface::local_position_vel_local_callback(const TwistStamped::SharedPtr msg)
+{
+    std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
+    // Velocity (World ENU)
+    ve_ = msg->twist.linear.x;
+    vn_ = msg->twist.linear.y;
+    vu_ = msg->twist.linear.z;
 }
 void ArdupilotInterface::vfr_hud_callback(const VfrHud::SharedPtr msg)
 {
@@ -262,12 +274,12 @@ void ArdupilotInterface::offboard_flag_callback()
 
     auto msg = autopilot_interface_msgs::msg::OffboardFlag();
     std::shared_lock<std::shared_mutex> lock(node_data_mutex_); // Use shared_lock for data reads
-    if (aircraft_fsm_state_ == ArdupilotInterfaceState::OFFBOARD_VELOCITY) {
-        msg.offboard_flag = 7;
-    } else if (aircraft_fsm_state_ == ArdupilotInterfaceState::OFFBOARD_ACCELERATION) {
-        msg.offboard_flag = 8;
+    if (aircraft_fsm_state_ == ArdupilotInterfaceState::OFFBOARD) {
+        msg.is_active = true;
+        msg.controller_name = active_offboard_controller_name_;
     } else {
-        msg.offboard_flag = 0; // Inactive
+        msg.is_active = false;
+        msg.controller_name = "";
     }
     offboard_flag_pub_->publish(msg);
 }
@@ -317,7 +329,7 @@ void ArdupilotInterface::set_reposition_callback(const std::shared_ptr<autopilot
             response->success = false;
             return;
         }
-    }
+    } // Drop shared_lock for reads
     if (active_srv_or_act_flag_.exchange(true)) {
         response->message = "Another service/action is active";
         RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
@@ -326,7 +338,11 @@ void ArdupilotInterface::set_reposition_callback(const std::shared_ptr<autopilot
     }
 
     // Change mode to GUIDED if in AUTO mode for a orbit
-    while (aircraft_fsm_state_ == ArdupilotInterfaceState::MC_ORBIT) { // TODO: lock variable read
+    auto is_orbiting = [this]() { // Use a lambda to lock the variable on read
+        std::shared_lock<std::shared_mutex> lock(node_data_mutex_);
+        return aircraft_fsm_state_ == ArdupilotInterfaceState::MC_ORBIT;
+    };
+    while (is_orbiting()) {
         auto set_mode_request = std::make_shared<SetMode::Request>();
         set_mode_request->custom_mode = "GUIDED";
         set_mode_client_->async_send_request(set_mode_request,
@@ -597,7 +613,7 @@ void ArdupilotInterface::offboard_handle_accepted(const std::shared_ptr<rclcpp_a
     auto result = std::make_shared<autopilot_interface_msgs::action::Offboard::Result>();
     auto feedback = std::make_shared<autopilot_interface_msgs::action::Offboard::Feedback>();
 
-    int offboard_setpoint_type = goal->offboard_setpoint_type;
+    std::string requested_controller = goal->controller_name;
     double max_duration_sec = goal->max_duration_sec;
 
     offboard_flag_count_ = 0;
@@ -631,20 +647,9 @@ void ArdupilotInterface::offboard_handle_accepted(const std::shared_ptr<rclcpp_a
                     }
                 });
             std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Reading data written by subs but also writing the FSM state
-            if (offboard_setpoint_type == autopilot_interface_msgs::action::Offboard::Goal::VELOCITY) {
-                aircraft_fsm_state_ = ArdupilotInterfaceState::OFFBOARD_VELOCITY;
-                feedback->message = "Offboarding (GUIDED mode) with VELOCITY setpoints";
-            }
-            else if (offboard_setpoint_type == autopilot_interface_msgs::action::Offboard::Goal::ACCELERATION) {
-                aircraft_fsm_state_ = ArdupilotInterfaceState::OFFBOARD_ACCELERATION;
-                feedback->message = "Offboarding (GUIDED mode) with ACCELERATION setpoints";
-            }
-            else {
-                result->success = false;
-                goal_handle->canceled(result);
-                RCLCPP_ERROR(this->get_logger(), "Offboard (GUIDED mode) type is not supported by ArdupilotInterface (only VELOCITY and ACCELERATION)");
-                return;
-            }
+            aircraft_fsm_state_ = ArdupilotInterfaceState::OFFBOARD;
+            active_offboard_controller_name_ = requested_controller;
+            feedback->message = "Offboarding (GUIDED mode) with controller: " + requested_controller;
             goal_handle->publish_feedback(feedback);
             time_of_offboard_start_us_ = current_time_us;
             feedback->message = "Starting offboard control at t=" + std::to_string(time_of_offboard_start_us_) + " us";
@@ -1161,8 +1166,7 @@ std::string ArdupilotInterface::fsm_state_to_string(ArdupilotInterfaceState stat
         case ArdupilotInterfaceState::VTOL_QRTL_PARAM_SET: return "VTOL_QRTL_PARAM_SET";
         case ArdupilotInterfaceState::VTOL_QRTL: return "VTOL_QRTL";
         case ArdupilotInterfaceState::LANDED: return "LANDED";
-        case ArdupilotInterfaceState::OFFBOARD_VELOCITY: return "OFFBOARD_VELOCITY";
-        case ArdupilotInterfaceState::OFFBOARD_ACCELERATION: return "OFFBOARD_ACCELERATION";
+        case ArdupilotInterfaceState::OFFBOARD: return "OFFBOARD";
         default: return "UNKNOWN";
     }
 }

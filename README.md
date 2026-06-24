@@ -1,6 +1,6 @@
 # aerial-autonomy-stack
 
-*Aerial autonomy stack* (AAS) is an all-in-one software stack to:
+*Aerial autonomy stack* (AAS) is a **batteries included** software stack to:
 
 1. **Develop** multi-drone autonomy—with ROS2, PX4, and ArduPilot
 2. **Simulate** faster-than-real-time perception and control—with YOLO and 3D LiDAR
@@ -61,21 +61,35 @@ done
 
 ![workspace](https://github.com/user-attachments/assets/ad909fcc-69de-44ac-84b3-c5bc7a1c896f)
 
-On one terminal, start AAS:
+Start AAS:
 
 ```sh
 cd aerial-autonomy-stack/tools_and_docs/
 AUTOPILOT=px4 NUM_QUADS=1 NUM_VTOLS=1 WORLD=swiss_town HEADLESS=false RTF=3.0 ./sim_run.sh    # Start a simulation, check the script for more options (note: ArduPilot SITL checks take ~30s of simulated time before being ready to arm)
 ```
 
-On another terminal, fly all drones:
+There are **3 main ways** to autonomously fly the drones (plus QGroundControl for operator supervision)
 
+1. From the `Ground`'s Xterm terminal, fly all drones in a **synchronized formation** with [`dtc_controller_node`](/ground/ground_ws/src/drone_traffic_controller/drone_traffic_controller/dtc_controller_node.py):
 ```sh
-for ID in {1..2}; do
-  docker exec -d aircraft-container-inst0_$ID bash -c "source /opt/ros/humble/setup.bash &&
-    source /aas/github_ws/install/setup.bash && source /aas/aircraft_ws/install/setup.bash &&
-    ros2 run mission mission --conops yalla.yaml --ros-args -r __ns:=/Drone$ID -p use_sim_time:=true"
-done
+ros2 run drone_traffic_controller dtc_controller --ros-args -p use_sim_time:=true
+```
+
+2. From any `QUAD`/`VTOL` Xterm terminal, fly a **behavior tree mission** (e.g., [`yalla.yaml`](/aircraft/aircraft_resources/missions/yalla.yaml)):
+```sh
+ros2 run mission mission --conops yalla.yaml --ros-args -r __ns:=/Drone$DRONE_ID -p use_sim_time:=true
+```
+
+3. From any `QUAD`/`VTOL` Xterm terminal, use **ROS2 actions** for [`px4_offboard`](/aircraft/aircraft_ws/src/offboard_control/src/px4_offboard.cpp)/[`ardupilot_guided`](/aircraft/aircraft_ws/src/offboard_control/src/ardupilot_guided.cpp):
+```sh
+cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/takeoff_action \
+    autopilot_interface_msgs/action/Takeoff '{takeoff_altitude: 30.0}'"
+# Press Enter to cancel the action or regain the terminal when it finishes
+
+cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
+    autopilot_interface_msgs/action/Offboard \
+    '{controller_name: att-test, max_duration_sec: 10.0}'"
+# Add or re-implement offboard controllers in `px4_offboard.cpp`, `ardupilot_guided.cpp`
 ```
 
 `./sim_run.sh` options:
@@ -119,8 +133,8 @@ done
 > # Reposition service (quads only)
 > ros2 service call /Drone${DRONE_ID}/set_reposition autopilot_interface_msgs/srv/SetReposition '{east: 50.0, north: 100.0, altitude: 60.0}'
 >
-> # Offboard action (PX4 quads and VTOLs offboard_setpoint_type: attitude = 0, rates = 1, trajectory = 2; ArduPilot quads offboard_setpoint_type: velocity = 3, acceleration = 4) 
-> cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action autopilot_interface_msgs/action/Offboard '{offboard_setpoint_type: 1, max_duration_sec: 5.0}'"
+> # Offboard action (Specify the flight behavior via `controller_name`, e.g., "traj-test" for PX4 or "vel-test" for ArduPilot)
+> cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action autopilot_interface_msgs/action/Offboard '{controller_name: traj-test, max_duration_sec: 5.0}'"
 >
 > # SetSpeed service (always limited by the autopilot params, for quads applies from the next command, not effective on ArduPilot VTOLs) 
 > ros2 service call /Drone${DRONE_ID}/set_speed autopilot_interface_msgs/srv/SetSpeed '{speed: 3.0}'
@@ -129,12 +143,10 @@ done
 > ros2 topic echo /gimbal_state
 > ros2 topic pub -1 /gimbal_pitch_cmd std_msgs/msg/Float64 "{data: 1.57}"
 > ```
-> To analyze the flight logs in the `Simulation`'s Xterm terminal:
+> To analyze the flight logs, in the `Simulation`'s Xterm terminal:
 > ```sh
 > /aas/simulation_resources/scripts/plot_logs.sh                                                # Analyze the flight logs at http://10.42.90.100:5006/browse or in MAVExplorer
 > ```
->
-> To create a new mission, re-implement [`test_mission.yaml`](/aircraft/aircraft_resources/missions/test_mission.yaml)
 > </details>
 > <details>
 > <summary>Add or disable <b>wind effects</b>, in the <kbd>Simulation</kbd>'s Xterm terminal <i>(click to expand)</i></summary>
@@ -184,9 +196,11 @@ done
 
 > AAS is tested on a [Holybro Jetson Baseboard](https://holybro.com/products/pixhawk-jetson-baseboard) with Pixhawk 6X and NVIDIA Orin NX 16GB
 >
-> The default quad is a [Holybro X650](https://holybro.com/collections/multicopter-kit/products/x650-kits?variant=43994378240189) with the [IMX219](https://docs.arducam.com/Nvidia-Jetson-Camera/Native-Camera/imx219/) camera and the [Livox Mid-360](https://www.livoxtech.com/mid-360/specs) LiDAR
+> The default quad is a [Holybro X650](https://holybro.com/collections/multicopter-kit/products/x650-kits?variant=43994378240189) with the [IMX219](https://docs.arducam.com/Nvidia-Jetson-Camera/Native-Camera/imx219/) camera and the [Livox Mid-360S](https://www.livoxtech.com/mid-360s/specs) LiDAR
 >
 > Read [`SETUP_AVIONICS.md`](/tools_and_docs/docs/SETUP_AVIONICS.md) and [`BOM.md`](/tools_and_docs/docs/BOM.md) to setup the requirements on the Jetson and configure the Pixhawk
+>
+> Read [`SETUP_CHRONY.md`](/tools_and_docs/docs/SETUP_CHRONY.md) to let the Jetson timesync to the `ground-image` computer when w/o internet
 
 ```sh
 sudo apt update && sudo apt install -y git
@@ -329,46 +343,62 @@ flowchart TB
 
         subgraph gnd ["#nbsp;ground#nbsp;container#nbsp;(amd64)"]
             mlrouter{{mavlink-router}}:::bridge
-            ground_system[/ground_system\]:::algo
+            ground_system(ground_system):::algo
+            dtc_controller(dtc_controller):::algo
             qgc(QGroundControl):::resource
             zenoh_gnd{{zenoh-bridge}}:::bridge
 
             ground_system --> |"/tracks"| zenoh_gnd
+            dtc_controller --> |"/dtc_commands"| zenoh_gnd
             mlrouter <--> qgc
             mlrouter --> ground_system
         end
 
         subgraph air ["[N#nbsp;x]#nbsp;aircraft#nbsp;container(s)#nbsp;(amd64,#nbsp;arm64)"]
             subgraph perception [Perception]
-                yolo_py[/yolo_py/]:::algo
-                kiss_icp[/kiss_icp/]:::algo
-            end
-            subgraph control [Control]
-                offboard_control(offboard_control):::algo
-                autopilot_interface(autopilot_interface):::algo
-                mission(mission):::algo
-            end
-            ap_link{{"uxrce_dds <br/> || MAVROS"}}:::bridge
-            subgraph swarm [Swarm]
-                state_sharing[/state_sharing\]:::algo
+                yolo_py(yolo_py):::algo
+                kiss_icp(kiss_icp):::algo
+                livo_pkgs(livo_pkgs):::algo
             end
             zenoh_air{{zenoh-bridge}}:::bridge
+            subgraph control [Control]
+                dtc_client(dtc_client):::algo
+                mission(mission):::algo
+                offboard_control(offboard_control):::algo
+                autopilot_interface(autopilot_interface):::algo
+                state_sharing(state_sharing):::algo
+            end
+            detection_split( ):::splitNode
+            track_split( ):::splitNode
 
+            ap_link{{"uxrce_dds <br/> || MAVROS"}}:::bridge
             kiss_icp -.-> |"/TBD"| ap_link
-            ap_link <--> autopilot_interface
+            livo_pkgs <-.-> |"/imu_data <br/> /TBD"| ap_link
+            zenoh_air --> |"/tracks <br/> /state_drone_N"| track_split
+            track_split --> offboard_control
+            track_split --> mission
+            zenoh_air --> |"/dtc_commands"| dtc_client
             ap_link --> state_sharing
-            yolo_py --> |"/detections"| offboard_control
-            offboard_control --> |"/reference"| autopilot_interface
-            mission --> |"ros2 action/srv"| autopilot_interface
+            ap_link <--> autopilot_interface
+            yolo_py --> |"/detections"| detection_split
+            detection_split --> offboard_control
+            detection_split --> mission
+            offboard_control --> |"/ctrl_ref"| autopilot_interface
+            mission --> |"ros2 action"| autopilot_interface
+            dtc_client --> |"ros2 action"| autopilot_interface
             zenoh_air <--> |"/state_drone_n"| state_sharing
+            autopilot_interface ~~~ state_sharing
         end
-
-        repo(((aerial#nbsp;autonomy#nbsp;stack)))
+        lidar_split( ):::splitNode
+        camera_split( ):::splitNode
     end
 
-    repo ~~~ gz
-    gz --> |"gz_gst_bridge <br/> [SIM_SUBNET]"| yolo_py
-    gz --> |"/lidar_points <br/> [SIM_SUBNET]"| kiss_icp
+    gz --> |"/lidar_points <br/> [SIM_SUBNET]"| lidar_split
+    lidar_split --> kiss_icp
+    lidar_split --> livo_pkgs
+    gz --> |"gz_gst_bridge <br/> [SIM_SUBNET]"| camera_split
+    camera_split --> livo_pkgs
+    camera_split -->  yolo_py
     sitl <--> |"UDP <br/> [SIM_SUBNET]"| ap_link
     sitl <--> |"MAVLink <br/> [SIM_SUBNET]"| mlrouter 
     zenoh_gnd <-.-> |"TCP <br/> [AIR_SUBNET]"| zenoh_air
@@ -376,15 +406,11 @@ flowchart TB
     classDef bridge fill:#ffebd6,stroke:#f5a623,stroke-width:2px;
     classDef algo fill:#e1f5fe,stroke:#0277bd,stroke-width:2px;
     classDef resource fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef blueStyle  fill:#e1f0ff,stroke:#666,stroke-width:2px;
-    classDef whiteStyle fill:#f9f9f9,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5;
-    classDef greyStyle  fill:#eeeeee,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5;
-
-    class aas,repo blueStyle;
-    class air,gnd,sim whiteStyle;
-    class perception,control,models,swarm greyStyle;
-    linkStyle 14,15,16,17 stroke:teal,stroke-width:3px;
-    linkStyle 18 stroke:blue,stroke-width:4px;
+    classDef splitNode fill:#cccccc,stroke:#666666,stroke-width:2px;
+    classDef blueStyle  fill:#e1f0ff,stroke:#666,stroke-width:2px; class aas blueStyle;
+    classDef whiteStyle fill:#f9f9f9,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5; class air,gnd,sim whiteStyle;
+    classDef greyStyle  fill:#eeeeee,stroke:#666,stroke-width:1px,stroke-dasharray: 5 5; class perception,control,models greyStyle;
+    linkStyle 23,24,25,26,27,28,29,30 stroke:teal,stroke-width:3px; linkStyle 31 stroke:blue,stroke-width:4px;
 ```
 
 <details>
@@ -402,6 +428,7 @@ aerial-autonomy-stack
 │   ├── aircraft_ws
 │   │   └── src
 │   │       ├── autopilot_interface                   # Ardupilot/PX4 high-level actions (Takeoff, Orbit, Offboard, Land)
+│   │       ├── drone_traffic_client                  # Subscriber of topic `/dtc_commands` enforcing high-level actions from the ground
 │   │       ├── imu_publisher                         # Multiplexer between PX4/DDS and ArduPilot/MAVROS sensor topics
 │   │       ├── mission                               # Orchestrator of the actions in `autopilot_interface`
 │   │       ├── offboard_control                      # Low-level references for the Offboard action in `autopilot_interface`
@@ -413,6 +440,7 @@ aerial-autonomy-stack
 ├── ground
 │   ├── ground_ws
 │   │   └── src
+│   │       ├── drone_traffic_controller              # Publisher of topic `/dtc_commands` broadcasted by Zenoh
 │   │       └── ground_system                         # Publisher of topic `/tracks` broadcasted by Zenoh
 │   │
 │   └── ground.yml.erb                                # Ground docker tmux entrypoint
@@ -458,7 +486,7 @@ aerial-autonomy-stack
 
 - [x] Host OS: [Ubuntu 22.04/24.04/26.04 (LTS, ESM 4/2036)](https://ubuntu.com/about/release-cycle)
 - [ ] Jetpack: [6.2.1 (rev. 1) [L4T 36.4.4, Ubuntu 22-based]](https://developer.nvidia.com/embedded/jetpack-archive)
-    - **TODO: test on JP 6.2.2 [L4T 36.5.0, Ubuntu 22-based]**
+    - **TODO: upgrade to JP 7.2 [L4T 39.2, Ubuntu 24-based]**
 - [x] [`nvidia-driver-580`](https://developer.nvidia.com/datacenter-driver-archive)
 - [x] [Docker Engine v29](https://docs.docker.com/engine/release-notes/)
 - [x] [NVIDIA Container Toolkit 1.19](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/index.html)
