@@ -528,6 +528,9 @@ External repositories:
 - [`Livox-SDK/livox_ros_driver2`](https://github.com/Livox-SDK/livox_ros_driver2) tag/branch: `master`
 </details>
 
+<img width="2160" height="972" alt="Screenshot from 2026-06-24 23-48-58" src="https://github.com/user-attachments/assets/a2421d83-5618-4849-8376-df8a2ec0de32" />
+<img width="2398" height="1137" alt="Screenshot from 2026-06-24 23-52-10" src="https://github.com/user-attachments/assets/984ded03-2c7d-410f-aabb-a787faffeaf4" />
+
 ---
 > You've done a man's job, sir. I guess you're through, huh?
 
