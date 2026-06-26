@@ -191,7 +191,7 @@ BATT_CRT_MAH        800             # Triggers the critical failsafe when 10% of
 BATT_FS_CRT_ACT     1               # Commands an immediate LAND when either of the low thresholds is breached
 
 # In QGC -> Vehicle Configuration -> Radio, calibrate the Radiomaster Boxer RC (revise FS_THR_VALUE, if necessary)
-# In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Stabilized/AltHold/Loiter, one for RTL
+# In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Loiter/AltHold/Stabilized, one for RTL
 # In QGC -> Vehicle Configuration -> Flight Safety, set RTL settings
 # In QGC -> Vehicle Configuration -> Sensors, calibrate accelerometer, level horizon, and compass (outdoors)
 ```
