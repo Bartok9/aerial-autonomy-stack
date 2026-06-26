@@ -170,6 +170,14 @@ WPNAV_SPEED_DN      150             # 1.5m/s descent rate in AUTO/GUIDED
 RTL_SPEED           500             # 5m/s maximum horizontal speed in RTL
 ACRO_Y_RATE         120             # 120 deg/s maximum yaw rate
 
+# Compass configuration (note: the order of the detected COMPASS_DEV_ID[2-8] may vary)
+# The 6X internal BMM150 compass should be automatically recognized with ID 331777
+# The F9P external IST8310 compass should be automatically recognized with ID 6589xx, auto-populating COMPASS_EXTERNAL, COMPASS_ORIENT
+COMPASS_USE3        0               # Disable non-existent COMPASS_USE3, assuming the IST8310 and BMM150 are on COMPASS_DEV_ID and COMPASS_DEV_ID2, respectively
+COMPASS_EXTERNAL    1               # External, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID
+COMPASS_ORIENT      6               # Yaw270, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID, see: https://docs.holybro.com/gps-and-rtk-system/f9p-h-rtk-series/ardupilot-ist8310-compass-orientation
+# In QGC -> Vehicle Configuration -> Sensors -> Sensor Settings, set the external compass as Priority 1 (COMPASS_PRIO1_ID) and the internal compass as Priority 2 (COMPASS_PRIO2_ID)
+
 # Failsafes
 FS_THR_ENABLE       0               # Disabled (the Boxer/R81 V2 combo does not send zero pulses)
 FS_GCS_ENABLE       1               # Commands an RTL if the QGC link is lost
