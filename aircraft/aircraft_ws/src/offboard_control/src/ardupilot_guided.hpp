@@ -13,6 +13,8 @@
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <unordered_map>
+#include <functional>
 
 #include <rclcpp/clock.hpp>
 #include <rclcpp/parameter.hpp>
@@ -31,6 +33,7 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
 
 #include <mavros_msgs/msg/vfr_hud.hpp>
+#include <mavros_msgs/msg/attitude_target.hpp>
 
 #include <nav_msgs/msg/odometry.hpp>
 
@@ -59,7 +62,8 @@ private:
     const GeographicLib::Geodesic& geod = GeographicLib::Geodesic::WGS84();
 
     // Node variables
-    std::atomic<int> offboard_flag_;
+    bool offboard_active_;
+    std::string active_controller_name_;
     int offboard_loop_frequency;
     std::atomic<int> offboard_loop_count_;
     std::atomic<int> last_offboard_loop_count_;
@@ -111,6 +115,7 @@ private:
     // MAVROS publishers
     rclcpp::Publisher<Vector3Stamped>::SharedPtr setpoint_accel_pub_;
     rclcpp::Publisher<TwistStamped>::SharedPtr setpoint_vel_pub_;
+    rclcpp::Publisher<AttitudeTarget>::SharedPtr setpoint_raw_att_pub_;
 
     // Callbacks for timers
     void ardupilot_interface_printout_callback();
@@ -133,6 +138,16 @@ private:
 
     // Utility
     double normalize_heading(double angle_rad);
+
+    // Controller map and controllers
+    using ControllerFunction = std::function<void()>;
+    std::unordered_map<std::string, ControllerFunction> controller_map_;
+    ControllerFunction active_controller_func_;
+    void att_ref_test();
+    void vel_ref_test();
+    void acc_ref_test();
+    void vel_ref_lead_pursuit();
+    void acc_ref_proportional_navigation();
 };
 
 #endif // OFFBOARD_CONTROL__ARDUPILOT_GUIDED_HPP_

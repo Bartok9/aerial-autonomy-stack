@@ -39,16 +39,17 @@ flowchart TB
         Orin <-->|"TELEM2 / ETH"| 6X
     end
     
-
     subgraph Doodle_Lab_Radio ["Doodle Lab Radio"]
         direction TB
         EvalKit[Evaluation Kit]
         RadioMod[Radio Module]
         EvalKit <-->|" "| RadioMod
     end
+
+    ESCs[4x Tekko32 F4 45A]
+    Jetson_Baseboard -->|"FMU PWM1-4"| ESCs
     
     Telem[Telemetry Radio]
-
     Doodle_Lab_Radio ~~~ Telem
 
     GPS[GPS Module]
@@ -79,10 +80,9 @@ flowchart TB
 
     Matek -- "12V" --> Lidar
 
-    %%%%%%%%%%
-    linkStyle 3 stroke:teal,stroke-width:3px,stroke-dasharray: 8 4;
-    linkStyle 4,5,6,7,16,18 stroke:red,stroke-width:4px;    
-    linkStyle 8,9,10,14,15,17 stroke:blue,stroke-width:3px;
+    linkStyle 4 stroke:teal,stroke-width:3px,stroke-dasharray: 8 4;
+    linkStyle 5,6,7,8,17,19 stroke:red,stroke-width:4px;
+    linkStyle 9,10,11,16,16,18 stroke:blue,stroke-width:3px;
 ```
 
 [kit]:https://holybro.com/collections/x650-kits/products/x650-kits?variant=43994378240189
@@ -105,19 +105,17 @@ flowchart TB
 
 Autopilot parameters for the Holybro X650 kit
 
-<!--
 ### PX4 Configuration
 
 ```sh
 TODO
 ```
--->
 
 ### ArduPilot Configuration
 
 ```sh
 # GPS module
-GPS1_TYPE           1               # Auto, if using the GPS2 port (SERIAL4) instead of GPS1 (SERIAL3), set SERIAL3_PROTOCOL (GPS1) to -1/None
+GPS1_TYPE           1               # Auto, here GPS1 refers to the primary GPS, not the 6X port; if connecting to the GPS2 port (SERIAL4) remember to set SERIAL3_PROTOCOL (GPS1 port) to -1/None
 
 # DShot ESCs (Tekko32 F4 45A)
 SERVOx_FUNCTION     0               # Disabled, for SERVO1 to 4, these are channels 1 to 4 on IO PWM
@@ -134,7 +132,8 @@ SERVOx_TRIM         1000            # For SERVO9 to 12
 
 # Motor thrust curve exponent (T-Motor MN4014 KV330s with Gemfan 1555 propellers)
 MOT_THST_EXPO       0.7             # For 15in props, 0.0 is linear, 1.0 is second order curve
-# (optional) lower MOT_SPIN_ARM and MOT_SPIN_MIN from the 0.1 and 0.15 defaults to 0.05, 0.1
+MOT_SPIN_ARM        0.05            # Lower spin speed when armed
+# (optional) lower MOT_SPIN_MIN from the 0.15 defaults to 0.1
 
 # Limit RPY acceleration (in centidegrees per square second)
 ATC_ACCEL_P_MAX     52000           # Between slow and very slow
@@ -156,13 +155,45 @@ ATC_RAT_RLL_FLTD    10              # Roll axis rate controller derivative frequ
 # Harmonic notch filter
 INS_HNTCH_ENABLE    1               # Enable (reboot to set the other parameters)
 INS_HNTCH_MODE      1               # Throttle tracking
-INS_HNTCH_REF       0.4             # Anchor point (should match the measured MOT_THST_HOVER)
+INS_HNTCH_REF       0.4             # Anchor point
 INS_HNTCH_FREQ      40              # Base frequency, lower than the default 80 for the X650
 INS_HNTCH_BW        20              # Half of INS_HNTCH_FREQ
 # Check INS_HNTCH_OPTS is set to 0
 
+# Speed limits
+LOIT_SPEED          500             # 5m/s maximum horizontal speed in LOITER
+PILOT_SPEED_UP      250             # 2.5m/s climb rate in LOITER
+PILOT_SPEED_DN      150             # 1.5m/s descent rate in LOITER
+WPNAV_SPEED         500             # 5m/s maximum horizontal speed in AUTO/GUIDED
+WPNAV_SPEED_UP      250             # 2.5m/s climb rate in AUTO/GUIDED
+WPNAV_SPEED_DN      150             # 1.5m/s descent rate in AUTO/GUIDED
+RTL_SPEED           500             # 5m/s maximum horizontal speed in RTL
+ACRO_Y_RATE         120             # 120 deg/s maximum yaw rate
+
+# Compass configuration (note: the order of the detected COMPASS_DEV_ID[2-8] may vary)
+# The 6X internal BMM150 compass should be automatically recognized with ID 331777
+# The F9P external IST8310 compass should be automatically recognized with ID 6589xx, auto-populating COMPASS_EXTERNAL, COMPASS_ORIENT
+COMPASS_USE3        0               # Disable non-existent COMPASS_USE3, assuming the IST8310 and BMM150 are on COMPASS_DEV_ID and COMPASS_DEV_ID2, respectively
+COMPASS_EXTERNAL    1               # External, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID
+COMPASS_ORIENT      6               # Yaw270, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID, see: https://docs.holybro.com/gps-and-rtk-system/f9p-h-rtk-series/ardupilot-ist8310-compass-orientation
+# In QGC -> Vehicle Configuration -> Sensors -> Sensor Settings, set the external compass as Priority 1 (COMPASS_PRIO1_ID) and the internal compass as Priority 2 (COMPASS_PRIO2_ID)
+
+# Failsafes
+FS_THR_ENABLE       0               # Disabled (the Boxer/R81 V2 combo does not send zero pulses)
+FS_GCS_ENABLE       1               # Commands an RTL if the QGC link is lost
+FS_GCS_TIMEOUT      5               # The timeout before the GCS failsafe engages
+FS_OPTIONS          0               # Never ignore the failsafes (not in AUTO/GUIDED, nor in pilot-controlled modes)
+BATT_LOW_VOLT       22.0            # Triggers the low failsafe at 3.6V per cell (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_LOW_MAH        1600            # Triggers the low failsafe when 20% of 8000mAh (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_FS_LOW_ACT     2               # Commands an RTL when either of the low thresholds is breached
+BATT_CRT_VOLT       21.0            # Triggers the critical failsafe at 3.5V per cell (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_CRT_MAH        800             # Triggers the critical failsafe when 10% of 8000mAh (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_FS_CRT_ACT     1               # Commands an immediate LAND when either of the low thresholds is breached
+
 # In QGC -> Vehicle Configuration -> Radio, calibrate the Radiomaster Boxer RC (revise FS_THR_VALUE, if necessary)
-# In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Stabilized/AltHold/Loiter, one for RTL
-# In QGC -> Vehicle Configuration -> Safety, set battery and general failsafes, RTL settings
+# In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Loiter/AltHold/Stabilized, one for RTL
+# In QGC -> Vehicle Configuration -> Flight Safety, set RTL settings
 # In QGC -> Vehicle Configuration -> Sensors, calibrate accelerometer, level horizon, and compass (outdoors)
 ```
+
+For full `.params` files examples, check folder [`params/`](/tools_and_docs/docs/params/)

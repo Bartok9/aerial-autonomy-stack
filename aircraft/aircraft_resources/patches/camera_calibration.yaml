@@ -1,0 +1,6 @@
+# Camera intrinsics for the IMX219-200 (dewarped to 640x360)
+# vfov: 98.05 deg -> fy = (360/2) / tan(98.05/2) = 156.334 (see imx219_dewarper_config.txt)
+fx: 156.334
+fy: 156.334
+cx: 320.0
+cy: 180.0
