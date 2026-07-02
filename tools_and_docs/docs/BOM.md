@@ -2,6 +2,8 @@
 
 > The following is an example of the hardware components necessary to build a quadcopter supporting **ALL** of `aerial-autonomy-stack`'s capabilities, including perception and multi-robot communication/swarming for about 6,000 USD
 
+![aircraft](https://github.com/user-attachments/assets/f7cf6a62-c452-4dd7-8cf5-e03fcc5ed027)
+
 ## Example AAS Quadcopter
 
 | #   | Part                                  | Description                                            | Cost (USD) | Link         |
