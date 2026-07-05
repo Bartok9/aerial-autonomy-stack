@@ -644,7 +644,7 @@ void ArdupilotInterface::offboard_handle_accepted(const std::shared_ptr<rclcpp_a
 
     offboard_flag_count_ = 0;
     bool offboarding = true;
-    uint64_t time_of_offboard_start_us_ = -1;
+    uint64_t time_of_offboard_start_us = UNSET_TIME_US;
     rclcpp::Rate offboard_loop_rate(ACTION_LOOP_RATE_HZ);
     while (offboarding) {
         offboard_loop_rate.sleep();
@@ -660,7 +660,7 @@ void ArdupilotInterface::offboard_handle_accepted(const std::shared_ptr<rclcpp_a
         }
 
         uint64_t current_time_us = this->get_clock()->now().nanoseconds() / 1000;  // Convert to microseconds
-        if (time_of_offboard_start_us_ == -1) {
+        if (time_of_offboard_start_us == UNSET_TIME_US) {
             // This is only sent once but it could be implemented with a FSM to verify the mode is changed
             auto set_mode_request = std::make_shared<SetMode::Request>();
             set_mode_request->custom_mode = "GUIDED";
@@ -672,17 +672,19 @@ void ArdupilotInterface::offboard_handle_accepted(const std::shared_ptr<rclcpp_a
                         RCLCPP_WARN(this->get_logger(), "Request mode failed");
                     }
                 });
-            std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Reading data written by subs but also writing the FSM state
-            aircraft_fsm_state_ = ArdupilotInterfaceState::OFFBOARD;
-            active_offboard_controller_name_ = requested_controller;
+            {
+                std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Reading data written by subs but also writing the FSM state
+                aircraft_fsm_state_ = ArdupilotInterfaceState::OFFBOARD;
+                active_offboard_controller_name_ = requested_controller;
+            }
             feedback->message = "Offboarding (GUIDED mode) with controller: " + requested_controller;
             goal_handle->publish_feedback(feedback);
-            time_of_offboard_start_us_ = current_time_us;
-            feedback->message = "Starting offboard control at t=" + std::to_string(time_of_offboard_start_us_) + " us";
+            time_of_offboard_start_us = current_time_us;
+            feedback->message = "Starting offboard control at t=" + std::to_string(time_of_offboard_start_us) + " us";
             goal_handle->publish_feedback(feedback);
         }
-        if (current_time_us >= (time_of_offboard_start_us_ + max_duration_sec * 1000000)) {
-            time_of_offboard_start_us_ = -1;
+        if (current_time_us >= (time_of_offboard_start_us + max_duration_sec * 1000000)) {
+            time_of_offboard_start_us = UNSET_TIME_US;
             offboarding = false;
             // This is only sent once but it could be implemented with a FSM to verify the mode is changed
             auto set_mode_request = std::make_shared<SetMode::Request>();
@@ -699,11 +701,13 @@ void ArdupilotInterface::offboard_handle_accepted(const std::shared_ptr<rclcpp_a
                         RCLCPP_WARN(this->get_logger(), "Request mode failed");
                     }
                 });
-            std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Reading data written by subs but also writing the FSM state
-            if (mav_type_ == 2) { // Multicopter
-                aircraft_fsm_state_ = ArdupilotInterfaceState::MC_ORBIT; // This lets the reposition service change mode when called after offboard
-            } else if (mav_type_ == 1) { // Fixed-wing/VTOL
-                aircraft_fsm_state_ = ArdupilotInterfaceState::FW_CRUISE;
+            {
+                std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Reading data written by subs but also writing the FSM state
+                if (mav_type_ == 2) { // Multicopter
+                    aircraft_fsm_state_ = ArdupilotInterfaceState::MC_ORBIT; // This lets the reposition service change mode when called after offboard
+                } else if (mav_type_ == 1) { // Fixed-wing/VTOL
+                    aircraft_fsm_state_ = ArdupilotInterfaceState::FW_CRUISE;
+                }
             }
             feedback->message = "Exiting offboard (GUIDED mode) control at t=" + std::to_string(current_time_us) + "us, entering LOITER mode";
             goal_handle->publish_feedback(feedback);

@@ -148,7 +148,8 @@ class YoloInferenceNode(Node):
                 # )
                 cap = cv2.VideoCapture(gst_pipeline_string, cv2.CAP_GSTREAMER)
         # cap = cv2.VideoCapture("/sample.mp4") # Load sample video for testing
-        assert cap.isOpened(), "Failed to open video stream"
+        if not cap.isOpened():
+            raise RuntimeError("Failed to open video stream")
         print(f"Pipeline FPS: {cap.get(cv2.CAP_PROP_FPS)}")
         stream_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         stream_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))

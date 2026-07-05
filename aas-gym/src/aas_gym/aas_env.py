@@ -23,7 +23,8 @@ class AASEnv(gym.Env):
             lidar: bool=True,
             odom: str="none",
             num_quads: int=1,
-            render_mode=None
+            render_mode=None,
+            gpu: bool=True
         ):
         super().__init__()
 
@@ -148,14 +149,16 @@ class AASEnv(gym.Env):
         env_xdg = os.environ.get('XDG_RUNTIME_DIR', '')
         gpu_requests = [
             DeviceRequest(count=-1, capabilities=[['gpu']]) # Replaces "--gpus all"
-        ]
+        ] if gpu else []
         self.ZMQ_IPC_SOCKET_DIR = '/tmp/aas_zmq_sockets'
         os.makedirs(self.ZMQ_IPC_SOCKET_DIR, exist_ok=True)
         volume_binds = {
             '/tmp/.X11-unix': {'bind': '/tmp/.X11-unix', 'mode': 'rw'}, # Replaces "--volume /tmp/.X11-unix:/tmp/.X11-unix:rw"
             self.ZMQ_IPC_SOCKET_DIR: {'bind': self.ZMQ_IPC_SOCKET_DIR, 'mode': 'rw'} # For ZMQ IPC sockets
         }
-        device_binds = ['/dev/dri:/dev/dri:rwm'] # Replaces "--device /dev/dri"
+        device_binds = [
+            '/dev/dri:/dev/dri:rwm' # Replaces "--device /dev/dri"
+        ] if gpu else []
         #
         force_container_cleanup(self.SIM_CONT_NAME)
         print(f"Creating Simulation Container ({self.SIM_CONT_NAME})...")
@@ -172,9 +175,9 @@ class AASEnv(gym.Env):
             environment={
                 "DISPLAY": env_display,
                 "QT_X11_NO_MITSHM": "1",
-                "NVIDIA_DRIVER_CAPABILITIES": "all",
-                "__NV_PRIME_RENDER_OFFLOAD": "1",
-                "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
+                **({"NVIDIA_DRIVER_CAPABILITIES": "all",
+                    "__NV_PRIME_RENDER_OFFLOAD": "1",
+                    "__GLX_VENDOR_LIBRARY_NAME": "nvidia"} if gpu else {}),
                 "XDG_RUNTIME_DIR": env_xdg,
                 "GST_DEBUG": "3",
                 "AUTOPILOT": self.AUTOPILOT,
@@ -234,9 +237,9 @@ class AASEnv(gym.Env):
                 environment={
                     "DISPLAY": env_display,
                     "QT_X11_NO_MITSHM": "1",
-                    "NVIDIA_DRIVER_CAPABILITIES": "all",
-                    "__NV_PRIME_RENDER_OFFLOAD": "1",
-                    "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
+                    **({"NVIDIA_DRIVER_CAPABILITIES": "all",
+                        "__NV_PRIME_RENDER_OFFLOAD": "1",
+                        "__GLX_VENDOR_LIBRARY_NAME": "nvidia"} if gpu else {}),
                     "XDG_RUNTIME_DIR": env_xdg,
                     "GST_DEBUG": "3",
                     "AUTOPILOT": self.AUTOPILOT,
@@ -294,9 +297,9 @@ class AASEnv(gym.Env):
         try:
             print("Restarting all containers in parallel...")
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                futures = [executor.submit(self.simulation_container.restart)]
+                futures = [executor.submit(self.simulation_container.restart, timeout=1)]
                 for air_cont in self.aircraft_containers:
-                    futures.append(executor.submit(air_cont.restart))
+                    futures.append(executor.submit(air_cont.restart, timeout=1))
                 for future in concurrent.futures.as_completed(futures):
                     future.result()
         except Exception as e:
@@ -323,15 +326,24 @@ class AASEnv(gym.Env):
             self.socket.setsockopt(zmq.RCVTIMEO, 300 * 1000) # Temporarily increase timeout to 300s to reset the simulation
             reset = 9999.0 # A special action to reset the environment
             action_payload = struct.pack('d', reset) # Serialize the action 
-            self.socket.send(action_payload) # Send the REQ
-            reply_bytes = self.socket.recv() # Wait for the REP (synchronous block) this call will block until a reply is received or it times out
-            unpacked = struct.unpack('iI', reply_bytes) # Deserialize: i = int32 (sec), I = uint32 (nanosec)
-            self.sim_sec, self.sim_nanosec = unpacked
-            self.start_sim_sec = float(self.sim_sec) + (float(self.sim_nanosec) * 1e-9)
-        except zmq.error.Again:
-            print("ZMQ Error: Reply from container timed out.")
-        except ValueError:
-            print("ZMQ Error: Reply format error. Received garbage state.")
+            for attempt in range(3):
+                try:
+                    self.socket.send(action_payload) # Send the REQ
+                    reply_bytes = self.socket.recv() # Wait for the REP (synchronous block) this call will block until a reply is received or it times out
+                    unpacked = struct.unpack('iI', reply_bytes) # Deserialize: i = int32 (sec), I = uint32 (nanosec)
+                    self.sim_sec, self.sim_nanosec = unpacked
+                    if self.sim_sec == 0 and self.sim_nanosec == 0:
+                        raise ValueError("Received zero-time payload (C++ bridge timeout).")
+                    self.start_sim_sec = float(self.sim_sec) + (float(self.sim_nanosec) * 1e-9)
+                    break # Success
+                except zmq.error.Again:
+                    print(f"ZMQ Error: Reply from container timed out. Attempt {attempt + 1} of 3.")
+                    if attempt == 2:
+                        raise RuntimeError("Simulation reset failed: ZMQ timeout.")
+                except ValueError:
+                    print(f"ZMQ Error: Reply format error. Received garbage state. Attempt {attempt + 1} of 3.")
+                    if attempt == 2:
+                        raise RuntimeError("Simulation reset failed: Invalid data format.")
         finally:
             self.socket.setsockopt(zmq.RCVTIMEO, 60 * 1000) # Restore standard timeout (60s) for stepping
         ###########################################################################################
@@ -349,17 +361,24 @@ class AASEnv(gym.Env):
         ###########################################################################################
         # ZeroMQ REQ/REP to the ROS2 sim ##########################################################
         ###########################################################################################
-        try:
-            action_payload = struct.pack('d', force) # Serialize the action
-            self.socket.send(action_payload) # Send the REQ
-            reply_bytes = self.socket.recv() # Wait for the REP (synchronous block) this call will block until a reply is received or it times out
-            unpacked = struct.unpack('iI', reply_bytes) # Deserialize: i = int32 (sec), I = uint32 (nanosec)
-            sec, nanosec = unpacked
-            self.sim_sec, self.sim_nanosec = unpacked
-        except zmq.error.Again:
-            print("ZMQ Error: Reply from container timed out.")
-        except ValueError:
-            print("ZMQ Error: Reply format error. Received garbage state.")
+        action_payload = struct.pack('d', force) # Serialize the action
+        for attempt in range(3):
+            try:
+                self.socket.send(action_payload) # Send the REQ
+                reply_bytes = self.socket.recv() # Wait for the REP (synchronous block) this call will block until a reply is received or it times out
+                unpacked = struct.unpack('iI', reply_bytes) # Deserialize: i = int32 (sec), I = uint32 (nanosec)
+                self.sim_sec, self.sim_nanosec = unpacked
+                if self.sim_sec == 0 and self.sim_nanosec == 0:
+                    raise ValueError("Received zero-time payload (C++ bridge timeout).")
+                break # Success
+            except zmq.error.Again:
+                print(f"ZMQ Error: Reply from container timed out. Attempt {attempt + 1} of 3.")
+                if attempt == 2:
+                    raise RuntimeError("Simulation step failed: ZMQ timeout.")
+            except ValueError:
+                print(f"ZMQ Error: Reply format error. Received garbage state. Attempt {attempt + 1} of 3.")
+                if attempt == 2:
+                    raise RuntimeError("Simulation step failed: Invalid data format.")
         ###########################################################################################
         ###########################################################################################
         ###########################################################################################
@@ -399,14 +418,14 @@ class AASEnv(gym.Env):
             print() # Add a newline after the final render
         
         try:
-            self.simulation_container.stop()
+            self.simulation_container.stop(timeout=1)
             self.simulation_container.remove(force=True)
             print(f"Simulation container '{self.simulation_container.name}' stopped.")
         except Exception:
             pass
         for container in self.aircraft_containers:
             try:
-                container.stop()
+                container.stop(timeout=1)
                 container.remove(force=True)
                 print(f"Aircraft container '{container.name}' stopped.")
             except Exception:

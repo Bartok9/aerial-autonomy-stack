@@ -92,6 +92,7 @@ private:
     std::atomic<int> last_offboard_flag_count_;
     rclcpp::Time last_offboard_flag_rate_check_time_;
     std::string active_offboard_controller_name_;
+    static constexpr uint64_t UNSET_TIME_US = std::numeric_limits<uint64_t>::max();
 
     // Callback groups
     rclcpp::CallbackGroup::SharedPtr callback_group_printout_;

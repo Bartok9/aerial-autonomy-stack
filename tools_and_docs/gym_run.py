@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--camera", action=argparse.BooleanOptionalAction, default=True, help="Enable/Disable Camera")
     parser.add_argument("--lidar", action=argparse.BooleanOptionalAction, default=True, help="Enable/Disable Lidar")
     parser.add_argument("--num_quads", type=int, default=1)
+    parser.add_argument("--gpu", action=argparse.BooleanOptionalAction, default=True, help="Enable/Disable GPU bindings")
     args = parser.parse_args()
 
     if args.mode == "step":
@@ -37,7 +38,8 @@ def main():
             camera=args.camera,
             lidar=args.lidar,
             num_quads=args.num_quads,
-            render_mode="human"
+            render_mode="human",
+            gpu=args.gpu
         )
         obs, info = env.reset()
         print(f"Reset result -- Obs: {obs}")
@@ -67,7 +69,8 @@ def main():
             camera=args.camera,
             lidar=args.lidar,
             num_quads=args.num_quads,
-            render_mode="ansi" # "ansi" for progress bar, "human" for GUI
+            render_mode="ansi", # "ansi" for progress bar, "human" for GUI
+            gpu=args.gpu
         )
         TIME_TO_SIMULATE_SEC = 250
         STEPS = TIME_TO_SIMULATE_SEC * CTRL_FREQ_HZ
@@ -114,7 +117,8 @@ def main():
                     camera=args.camera,
                     lidar=args.lidar,
                     num_quads=args.num_quads,
-                    render_mode=None
+                    render_mode=None,
+                    gpu=args.gpu
                 )
             return _init
         env_fns = [make_env(i, CTRL_FREQ_HZ) for i in range(NUM_ENVS)]
