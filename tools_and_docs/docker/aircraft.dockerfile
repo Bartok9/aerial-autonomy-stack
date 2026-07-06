@@ -48,7 +48,8 @@ RUN apt update \
     && rosdep init
 
 # Install Zenoh ROS2 bridge
-RUN echo "deb [trusted=yes] https://download.eclipse.org/zenoh/debian-repo/ /" | sudo tee -a /etc/apt/sources.list > /dev/null \
+RUN curl -L https://download.eclipse.org/zenoh/debian-repo/zenoh-public-key | gpg --dearmor --yes --output /etc/apt/keyrings/zenoh-public-key.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/zenoh-public-key.gpg] https://download.eclipse.org/zenoh/debian-repo/ /" | tee -a /etc/apt/sources.list > /dev/null \
     && apt-get update && \
     apt-get install -y --no-install-recommends zenoh-bridge-ros2dds \
     && apt clean \

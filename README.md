@@ -551,7 +551,7 @@ docker exec -it aircraft-container-inst0_1 tmux attach
 ## Known Issues
 
 - ArduPilot SITL for Iris uses option -f that also sets "external": True, this is not the case for the Alti Transition from ArduPilot/SITL_Models
-- The .params file of the ArduPilot tailsitter swan_k1_hwing is poorly tuned
+- ArduPilot SITL crashes when the swan_k1_hwing tailsitter model lands
 - QGC will only connect to the first 10 ArduPilot vehicles when GND_CONTAINER=false because of settings in QGroundControl.ini
 - Gazebo WindEffects plugin affects cruise speeds and it is disabled for the standard_vtol's model.sdf.erb
 - Command 178 MAV_CMD_DO_CHANGE_SPEED is accepted but not effective in changing speed for ArduPilot VTOL
