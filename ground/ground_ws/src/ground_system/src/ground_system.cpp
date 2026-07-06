@@ -42,10 +42,11 @@ GroundSystem::GroundSystem() : Node("ground_system"), keep_running_(true)
     timer_ = this->create_wall_timer(timer_period, std::bind(&GroundSystem::publish_swarm_obs, this));
 
     // Single listener thread, use base_port_ and pass drone_id = -1 to signal "auto-detect ID from message"
-    listener_threads_.emplace_back(&GroundSystem::mavlink_listener, this, -1, base_port_);
+    listener_threads_.emplace_back(&GroundSystem::mavlink_listener, this, -1, base_port_, 0);
     RCLCPP_INFO(this->get_logger(), "Listening to the streams from %d drones on single port %d", num_drones_, base_port_);
     // To listen to separate UDP streams on separate ports, create multiple threads using:
-    // listener_threads_.emplace_back(&GroundSystem::mavlink_listener, this, drone_id, port);
+    // listener_threads_.emplace_back(&GroundSystem::mavlink_listener, this, drone_id, port, thread_idx);
+    // Make sure thread_idx < MAVLINK_COMM_NUM_BUFFERS
 }
 
 GroundSystem::~GroundSystem()
@@ -58,8 +59,13 @@ GroundSystem::~GroundSystem()
     }
 }
 
-void GroundSystem::mavlink_listener(int drone_id, int port)
+void GroundSystem::mavlink_listener(int drone_id, int port, int thread_idx)
 {
+    if (thread_idx < 0 || thread_idx >= MAVLINK_COMM_NUM_BUFFERS) {
+        RCLCPP_ERROR(this->get_logger(), "Invalid thread_idx %d. Must be strictly less than %d", thread_idx, MAVLINK_COMM_NUM_BUFFERS);
+        return;
+    }
+
     // Setup UDP Socket
     int sockfd;
     struct sockaddr_in servaddr;
@@ -77,8 +83,12 @@ void GroundSystem::mavlink_listener(int drone_id, int port)
 
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(ip_.c_str());
     servaddr.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip_.c_str(), &servaddr.sin_addr) <= 0) {
+        RCLCPP_ERROR(this->get_logger(), "Invalid IP address: %s", ip_.c_str());
+        close(sockfd);
+        return;
+    }
 
     if (bind(sockfd, (const struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
         RCLCPP_ERROR(this->get_logger(), "Bind failed for drone %d on port %d", drone_id, port);
@@ -89,6 +99,7 @@ void GroundSystem::mavlink_listener(int drone_id, int port)
     uint8_t buffer[2048];
     mavlink_message_t msg;
     mavlink_status_t status;
+    mavlink_channel_t channel = static_cast<mavlink_channel_t>(MAVLINK_COMM_0 + thread_idx);
 
     while (keep_running_ && rclcpp::ok()) {
         ssize_t len = recvfrom(sockfd, (char *)buffer, 2048, 0, NULL, NULL);
@@ -96,7 +107,7 @@ void GroundSystem::mavlink_listener(int drone_id, int port)
         if (len > 0) {
             // Parse bytes
             for (ssize_t i = 0; i < len; ++i) {
-                if (mavlink_parse_char(MAVLINK_COMM_0, buffer[i], &msg, &status)) {
+                if (mavlink_parse_char(channel, buffer[i], &msg, &status)) {
 
                     // In single-port/single-thread mode (drone_id == -1), detect ID from the message
                     int current_id = drone_id;

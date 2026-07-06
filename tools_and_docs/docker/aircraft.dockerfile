@@ -51,7 +51,8 @@ RUN apt update \
     && rosdep init
 
 # Install Zenoh ROS2 bridge
-RUN echo "deb [trusted=yes] https://download.eclipse.org/zenoh/debian-repo/ /" | sudo tee -a /etc/apt/sources.list > /dev/null \
+RUN curl -L https://download.eclipse.org/zenoh/debian-repo/zenoh-public-key | gpg --dearmor --yes --output /etc/apt/keyrings/zenoh-public-key.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/zenoh-public-key.gpg] https://download.eclipse.org/zenoh/debian-repo/ /" | tee -a /etc/apt/sources.list > /dev/null \
     && apt-get update && \
     apt-get install -y --no-install-recommends zenoh-bridge-ros2dds \
     && apt clean \
@@ -397,7 +398,7 @@ COPY ground/ground_ws/src/ground_system_msgs /aas/aircraft_ws/src/ground_system_
 COPY aircraft/aircraft_ws/src /aas/aircraft_ws/src
 WORKDIR /aas/aircraft_ws
 RUN rosdep update
-RUN apt update && rosdep install --from-paths src/ --ignore-src --rosdistro jazzy -y --skip-keys "px4_msgs" && apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y python3-simpleeval && rosdep install --from-paths src/ --ignore-src --rosdistro jazzy -y --skip-keys "px4_msgs" && apt clean && rm -rf /var/lib/apt/lists/*
 # Explicitly use bash, not sh, to source and build the workspace
 RUN bash -c "source /opt/ros/jazzy/setup.bash && source /aas/github_ws/install/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release"
 

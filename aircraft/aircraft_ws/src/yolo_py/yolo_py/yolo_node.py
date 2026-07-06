@@ -39,6 +39,7 @@ class YoloInferenceNode(Node):
         self.cx = None
         self.cy = None
         self.architecture = platform.machine()
+        self.is_jetson = (self.architecture == 'aarch64')
         
         if self.run_inference:
             # Load classes
@@ -100,7 +101,7 @@ class YoloInferenceNode(Node):
                     "h264parse config-interval=-1 ! "
                     "nvv4l2decoder enable-max-performance=1 ! "     # Hardware Decoding: Uses the Orin's dedicated engine
                     "nvvidconv ! "         # NVMM-to-CPU Memory Conversion
-                    "video/x-raw, format=I420 ! "
+                    "video/x-raw, format=I420 ! " # If needed, add "queue max-size-buffers=2 leaky=downstream ! " to mitigate EGL crashes
                     "videoconvert ! "      # CPU Color Conversion: I420 to BGR
                     "video/x-raw, format=BGR ! "
                     "appsink drop=true max-buffers=1 sync=false "
@@ -125,6 +126,7 @@ class YoloInferenceNode(Node):
                     "nvdewarper config-file=/aas/aircraft_resources/patches/imx219_dewarper_config.txt ! "
                     "nvvidconv ! "
                     "video/x-raw, width=640, height=360, format=BGRx ! "
+                    "queue max-size-buffers=2 leaky=downstream ! " # Mitigate EGL crashes
                     "videoconvert ! video/x-raw, format=BGR ! "
                     "appsink drop=true max-buffers=1 sync=false"
                 ) # Test with: gst-launch-1.0 nvarguscamerasrc sensor-id=0 ! 'video/x-raw(memory:NVMM), width=1280, height=720, framerate=60/1' ! nvvidconv ! nv3dsink -e
@@ -146,7 +148,8 @@ class YoloInferenceNode(Node):
                 # )
                 cap = cv2.VideoCapture(gst_pipeline_string, cv2.CAP_GSTREAMER)
         # cap = cv2.VideoCapture("/sample.mp4") # Load sample video for testing
-        assert cap.isOpened(), "Failed to open video stream"
+        if not cap.isOpened():
+            raise RuntimeError("Failed to open video stream")
         print(f"Pipeline FPS: {cap.get(cv2.CAP_PROP_FPS)}")
         stream_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         stream_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -273,7 +276,7 @@ class YoloInferenceNode(Node):
 
             # Only on Jetson, stream to the ground station via UDP using GStreamer
             # On ports 5001, 5002, ..., and 5101, 5102, ..., based on DRONE_ID and self.camera_id
-            if self.remote_video_streams and (self.architecture == 'aarch64'):
+            if self.remote_video_streams and self.is_jetson: # Use cached boolean flag in loops
                 if not hasattr(self, 'gnd_stream_writer'):
                     h, w = frame.shape[:2]
                     gnd_ip = os.getenv('AIR_SUBNET', '10.22') + '.90.' + os.getenv('GROUND_ID', '101')
@@ -282,15 +285,18 @@ class YoloInferenceNode(Node):
                         "appsrc do-timestamp=true ! video/x-raw, format=BGR ! queue max-size-buffers=2 leaky=downstream ! "
                         "videoconvert ! videorate drop-only=true ! "
                         "video/x-raw, format=BGRx, max-framerate=10/1 ! nvvidconv ! "
-                        "nvv4l2h265enc maxperf-enable=1 preset-level=1 insert-sps-pps=true idrinterval=30 ! "
+                        "nvv4l2h265enc maxperf-enable=1 preset-level=3 "
+                        "control-rate=0 bitrate=800000 peak-bitrate=1200000 " # Variable bitrate, or use "control-rate=1 bitrate=1000000 " for constant bitrate
+                        "insert-sps-pps=true idrinterval=20 ! "
                         f"h265parse ! rtph265pay pt=96 config-interval=1 mtu=1400 ! udpsink host={gnd_ip} port={port} sync=false async=false"
                     )
                     # Cap the framerate to 10FPS and use h265 to reduce bandwidith
-                    # Optionally, add "control-rate=2 bitrate=2000000 peak-bitrate=3000000" after nvv4l2h265enc to cap (variable) bitrate
                     # Optionally, re-scale the frames "nvvidconv ! video/x-raw, width=640, height=480 ! "
                     self.gnd_stream_writer = cv2.VideoWriter(gst_out, cv2.CAP_GSTREAMER, 0, 60.0, (w, h)) # Framerate upper limit of 60FPS
                     self.get_logger().info(f"Started UDP stream to {gnd_ip}:{port}")
                 if self.gnd_stream_writer.isOpened():
+                    ros_time_sec = self.get_clock().now().nanoseconds / 1e9
+                    cv2.putText(frame, f"ROS T: {ros_time_sec:.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 1) # Timestamp frames
                     self.gnd_stream_writer.write(frame)
 
         # Cleanup
@@ -321,6 +327,8 @@ class YoloInferenceNode(Node):
             if not ret:
                 time.sleep(0.01) # Avoid busy loop if no frame is received
                 continue
+            if self.is_jetson: # Use cached boolean flag in loops
+                frame = frame.copy() # On Jetson, avoid GStreamer and inference memory conflicts (at small CPU cost)
             try:
                 if frame_queue.full():
                     try:
@@ -337,6 +345,7 @@ class YoloInferenceNode(Node):
         h0, w0 = frame.shape[:2]
 
         img = cv2.dnn.blobFromImage(frame, 1/255.0, (self.input_size, self.input_size), swapRB=True, crop=False)
+        # Consider letterboxed preprocessing instead of `blobFromImage`'s stretch-resize if aspect-ratio distortion hurts detection
 
         with Profiler("ONNX Runtime Inference"):
             outputs = self.session.run(None, {self.input_name: img})

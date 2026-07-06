@@ -17,9 +17,10 @@ GROUND_ID="${GROUND_ID:-101}" # Last byte of the simulation container IP (defaul
 #
 NUM_QUADS="${NUM_QUADS:-1}" # Number of quadcopters (default = 1)
 NUM_VTOLS="${NUM_VTOLS:-0}" # Number of VTOLs (default = 0)
+NUM_TAILS="${NUM_TAILS:-0}" # Number of tailsitters (default = 0)
 WORLD="${WORLD:-impalpable_greyness}" # Options: impalpable_greyness (default), apple_orchard, shibuya_crossing, swiss_town
 #
-DEV="${DEV:false}" # Options: true, false (default)
+DEV="${DEV:-false}" # Options: true, false (default)
 HITL="${HITL:-false}" # Options: true, false (default)
 GND_CONTAINER="${GND_CONTAINER:-true}" # Options: true (default), false
 RTF="${RTF:-1.0}" # Real-time factor (default = 1.0), set to <=0.0 for as fast as possible execution
@@ -43,7 +44,7 @@ if echo "$XDG_CURRENT_DESKTOP" | grep -qi "gnome"; then
 elif grep -qEi "(Microsoft|WSL)" /proc/version &> /dev/null; then
   DESK_ENV="wsl"
 else
-  echo "Unsupported environment" 
+  echo "Untested (non-GNOME, non-WSL) desktop environment, exiting."
   exit 1
 fi
 echo "Desktop environment: $DESK_ENV"
@@ -120,7 +121,7 @@ DOCKER_CMD="docker run -it --rm \
   --env DISPLAY=$DISPLAY --env QT_X11_NO_MITSHM=1 --env NVIDIA_DRIVER_CAPABILITIES=all --env XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR --env GST_DEBUG=3 \
   --env __NV_PRIME_RENDER_OFFLOAD=1 --env __GLX_VENDOR_LIBRARY_NAME=nvidia \
   --env AUTOPILOT=$AUTOPILOT --env HEADLESS=$HEADLESS --env CAMERA=$CAMERA --env LIDAR=$LIDAR \
-  --env NUM_QUADS=$NUM_QUADS --env NUM_VTOLS=$NUM_VTOLS --env WORLD=$WORLD \
+  --env NUM_QUADS=$NUM_QUADS --env NUM_VTOLS=$NUM_VTOLS --env NUM_TAILS=$NUM_TAILS --env WORLD=$WORLD \
   --env SIMULATED_TIME=true --env RTF=$RTF --env START_AS_PAUSED=$START_AS_PAUSED \
   --env SIM_SUBNET=$SIM_SUBNET --env GROUND_ID=$GROUND_ID \
   --env GND_CONTAINER=$GND_CONTAINER \
@@ -153,7 +154,7 @@ if [[ "$HITL" == "false" ]]; then
       --env DISPLAY=$DISPLAY --env QT_X11_NO_MITSHM=1 --env NVIDIA_DRIVER_CAPABILITIES=all --env XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR --env GST_DEBUG=3 \
       --env __NV_PRIME_RENDER_OFFLOAD=1 --env __GLX_VENDOR_LIBRARY_NAME=nvidia \
       --env HEADLESS=$HEADLESS \
-      --env NUM_QUADS=$NUM_QUADS --env NUM_VTOLS=$NUM_VTOLS \
+      --env NUM_QUADS=$NUM_QUADS --env NUM_VTOLS=$NUM_VTOLS --env NUM_TAILS=$NUM_TAILS \
       --env SIMULATED_TIME=true \
       --env ROS_DOMAIN_ID=$GROUND_ID \
       --env HOST_INPUT_GID=$(getent group input | cut -d: -f3) \
@@ -209,11 +210,13 @@ if [[ "$HITL" == "false" ]]; then
   launch_aircraft_containers "quad" $NUM_QUADS
   # Launch the VTOL containers
   launch_aircraft_containers "vtol" $NUM_VTOLS
+  # Launch the Tailsitter containers
+  launch_aircraft_containers "tail" $NUM_TAILS
 
   if [[ "$GND_CONTAINER" == "true" ]]; then
     sleep 2.0 # Once all containers are up, connect ground and aircraft containers to the air network
     docker network connect --ip=${AIR_SUBNET}.90.$GROUND_ID $AIR_NET_NAME $GND_CONT_NAME
-    for i in $(seq 1 $((NUM_QUADS + NUM_VTOLS))); do
+    for i in $(seq 1 $((NUM_QUADS + NUM_VTOLS + NUM_TAILS))); do
       docker network connect --ip=${AIR_SUBNET}.90.$i $AIR_NET_NAME "aircraft-container-inst${INSTANCE}_${i}"
     done
   fi
@@ -225,21 +228,16 @@ read -n 1 -s # Wait for user input
 
 # Cleanup function
 cleanup() {
-  DOCKER_PIDS=$(pgrep -f "docker run.*inst${INSTANCE}" 2>/dev/null || true)
+  DOCKER_PIDS=$(pgrep -f "docker run.*inst${INSTANCE}([^0-9]|$)" 2>/dev/null || true)
   CONTAINER_NAMES=("${SIM_CONT_NAME}" "${GND_CONT_NAME}" "aircraft-container-inst${INSTANCE}")
   echo "Stopping Docker containers (this will take a few seconds)..."
   for name in "${CONTAINER_NAMES[@]}"; do
-      CIDS=$(docker ps -a -q --filter name="${name}" 2>/dev/null || true)
+      CIDS=$(docker ps -a -q --filter name="^${name}(_.*)?$" 2>/dev/null || true)
       for CID in $CIDS; do
         if [ -n "$CID" ]; then
           CNT_NAME=$(docker inspect --format="{{.Name}}" "$CID" | sed 's/^\///')
           echo "Removing $CNT_NAME..."
-          docker stop -t 1 $CID >/dev/null 2>&1 || true
-          if [[ "$CNT_NAME" == "$SIM_CONT_NAME" ]]; then
-            docker stop -t 2 $CID >/dev/null 2>&1 || true # Longer timeout for the container with Gazebo to avoid NVIDIA driver panic
-          else
-            docker stop -t 1 $CID >/dev/null 2>&1 || true
-          fi
+          docker stop -t 1 $CID >/dev/null 2>&1 || true # If needed, increase timeout -t to avoid NVIDIA driver panic
           docker rm $CID >/dev/null 2>&1 || true
         fi
       done

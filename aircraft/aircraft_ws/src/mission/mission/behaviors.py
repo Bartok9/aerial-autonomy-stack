@@ -4,6 +4,7 @@ import py_trees
 import rclpy
 from action_msgs.msg import GoalStatus
 from geographiclib.geodesic import Geodesic
+from simpleeval import simple_eval
 
 from autopilot_interface_msgs.action import Takeoff, Land, Orbit, Offboard
 from autopilot_interface_msgs.srv import SetSpeed, SetReposition
@@ -52,7 +53,11 @@ class CheckBlackboardBehavior(py_trees.behaviour.Behaviour):
         condition_met = False
         if self.expression:
             try:
-                condition_met = bool(eval(self.expression, {}, {"data": data}))
+                condition_met = bool(simple_eval( # simple_eval requires to explicitly pass allowed functions and variables
+                    self.expression,
+                    functions={"len": len},
+                    names={"data": data}
+                ))
             except Exception as e:
                 self.ros_node.get_logger().error(f"[{self.name}] Expression eval error: {e}")
                 return py_trees.common.Status.FAILURE
@@ -156,7 +161,7 @@ class TakeoffBehavior(BaseActionBehavior):
         goal = Takeoff.Goal()
         goal.takeoff_altitude = float(self.params.get('takeoff_altitude', 20.0))
         goal.vtol_transition_heading = float(self.params.get('vtol_transition_heading', 0.0))
-        goal.vtol_loiter_nord = float(self.params.get('vtol_loiter_nord', 100.0))
+        goal.vtol_loiter_north = float(self.params.get('vtol_loiter_north', 100.0))
         goal.vtol_loiter_east = float(self.params.get('vtol_loiter_east', 100.0))
         goal.vtol_loiter_alt = float(self.params.get('vtol_loiter_alt', 120.0))
         return goal
@@ -190,7 +195,7 @@ class OffboardBehavior(BaseActionBehavior):
     def create_goal(self):
         autopilot, drone_type = os.getenv('AUTOPILOT', ''), os.getenv('DRONE_TYPE', '')
         if autopilot == 'ardupilot' and drone_type != 'quad':
-            self.ros_node.get_logger().warn(f"[{self.name}] Offboard unsupported by ArduPilot VTOL. Skipping.")
+            self.ros_node.get_logger().warn(f"[{self.name}] Offboard (GUIDED MODE) in ArduPilot is only supported for 'DRONE_TYPE=quad'. Skipping.")
             return "SKIPPED"
         goal = Offboard.Goal()
         default_controller = 'traj-test' if autopilot == 'px4' else 'vel-test' # Pick a default controller is not specified in the YAML
@@ -268,7 +273,7 @@ class RepositionBehavior(py_trees.behaviour.Behaviour):
         self.service_future = None
         self.reposition_active = False
         if os.getenv('DRONE_TYPE', '') != 'quad':
-            self.ros_node.get_logger().warn(f"[{self.name}] Reposition is only supported for 'quad'. Skipping.")
+            self.ros_node.get_logger().warn(f"[{self.name}] Reposition is only supported for 'DRONE_TYPE=quad'. Skipping.")
             self.req_sent = "SKIPPED"
 
     def update(self):

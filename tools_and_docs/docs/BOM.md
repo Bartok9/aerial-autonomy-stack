@@ -2,6 +2,8 @@
 
 > The following is an example of the hardware components necessary to build a quadcopter supporting **ALL** of `aerial-autonomy-stack`'s capabilities, including perception and multi-robot communication/swarming for about 6,000 USD
 
+![aircraft](https://github.com/user-attachments/assets/f7cf6a62-c452-4dd7-8cf5-e03fcc5ed027)
+
 ## Example AAS Quadcopter
 
 | #   | Part                                  | Description                                            | Cost (USD) | Link         |
@@ -101,15 +103,17 @@ flowchart TB
 [doot1]:https://www.mouser.ca/ProductDetail/Doodle-Labs/RM-2450-11N3?qs=ulEaXIWI0c91eCn7VRB%2FpA%3D%3D
 [doot2]:https://www.mouser.ca/ProductDetail/Doodle-Labs/EK-2450-11N3?qs=ulEaXIWI0c%2FLOqPeL4gNgg%3D%3D
 
-## Holybro X650 Parameters
+## Holybro X650 with 6X Autopilot Parameters
 
-Autopilot parameters for the Holybro X650 kit
+Non-default parameters for the Holybro X650 kit; for full `.params` files examples, check folder [`params/`](/tools_and_docs/docs/params/)
 
+<!--
 ### PX4 Configuration
 
 ```sh
-TODO
+TBD
 ```
+-->
 
 ### ArduPilot Configuration
 
@@ -160,22 +164,38 @@ INS_HNTCH_FREQ      40              # Base frequency, lower than the default 80 
 INS_HNTCH_BW        20              # Half of INS_HNTCH_FREQ
 # Check INS_HNTCH_OPTS is set to 0
 
+# Speed limits
+LOIT_SPEED          500             # 5m/s maximum horizontal speed in LOITER
+PILOT_SPEED_UP      250             # 2.5m/s climb rate in LOITER
+PILOT_SPEED_DN      150             # 1.5m/s descent rate in LOITER
+WPNAV_SPEED         500             # 5m/s maximum horizontal speed in AUTO/GUIDED
+WPNAV_SPEED_UP      250             # 2.5m/s climb rate in AUTO/GUIDED
+WPNAV_SPEED_DN      150             # 1.5m/s descent rate in AUTO/GUIDED
+RTL_SPEED           500             # 5m/s maximum horizontal speed in RTL
+ACRO_Y_RATE         120             # 120 deg/s maximum yaw rate
+
+# Compass configuration (note: the order of the detected COMPASS_DEV_ID[2-8] may vary)
+# The 6X internal BMM150 compass should be automatically recognized with ID 331777
+# The F9P external IST8310 compass should be automatically recognized with ID 6589xx, auto-populating COMPASS_EXTERNAL, COMPASS_ORIENT
+COMPASS_USE3        0               # Disable non-existent COMPASS_USE3, assuming the IST8310 and BMM150 are on COMPASS_DEV_ID and COMPASS_DEV_ID2, respectively
+COMPASS_EXTERNAL    1               # External, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID
+COMPASS_ORIENT      6               # Yaw270, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID, see: https://docs.holybro.com/gps-and-rtk-system/f9p-h-rtk-series/ardupilot-ist8310-compass-orientation
+# In QGC -> Vehicle Configuration -> Sensors -> Sensor Settings, set the external compass as Priority 1 (COMPASS_PRIO1_ID) and the internal compass as Priority 2 (COMPASS_PRIO2_ID)
+
 # Failsafes
-FS_THR_ENABLE      0                # Disabled (the Boxer/R81 V2 combo does not send zero pulses)
-FS_GCS_ENABLE      1                # Commands an RTL if the QGC link is lost
-FS_GCS_TIMEOUT     5                # The timeout before the GCS failsafe engages
-FS_OPTIONS         0                # Never ignore the failsafes (not in AUTO/GUIDED, nor in pilot-controlled modes)
-BATT_LOW_VOLT      22.0             # Triggers the low failsafe at 3.6V per cell (Tattu G-Tech 6S 8000mAh 25C 22.2V)
-BATT_LOW_MAH       1600             # Triggers the low failsafe when 20% of 8000mAh (Tattu G-Tech 6S 8000mAh 25C 22.2V)
-BATT_FS_LOW_ACT    2                # Commands an RTL when either of the low thresholds is breached
-BATT_CRT_VOLT      21.0             # Triggers the critical failsafe at 3.5V per cell (Tattu G-Tech 6S 8000mAh 25C 22.2V)
-BATT_CRT_MAH       800              # Triggers the critical failsafe when 10% of 8000mAh (Tattu G-Tech 6S 8000mAh 25C 22.2V)
-BATT_FS_CRT_ACT    1                # Commands an immediate LAND when either of the low thresholds is breached
+FS_THR_ENABLE       0               # Disabled (the Boxer/R81 V2 combo does not send zero pulses)
+FS_GCS_ENABLE       1               # Commands an RTL if the QGC link is lost
+FS_GCS_TIMEOUT      5               # The timeout before the GCS failsafe engages
+FS_OPTIONS          0               # Never ignore the failsafes (not in AUTO/GUIDED, nor in pilot-controlled modes)
+BATT_LOW_VOLT       22.0            # Triggers the low failsafe at 3.6V per cell (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_LOW_MAH        1600            # Triggers the low failsafe when 20% of 8000mAh (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_FS_LOW_ACT     2               # Commands an RTL when either of the low thresholds is breached
+BATT_CRT_VOLT       21.0            # Triggers the critical failsafe at 3.5V per cell (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_CRT_MAH        800             # Triggers the critical failsafe when 10% of 8000mAh (Tattu G-Tech 6S 8000mAh 25C 22.2V)
+BATT_FS_CRT_ACT     1               # Commands an immediate LAND when either of the low thresholds is breached
 
 # In QGC -> Vehicle Configuration -> Radio, calibrate the Radiomaster Boxer RC (revise FS_THR_VALUE, if necessary)
-# In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Stabilized/AltHold/Loiter, one for RTL
+# In QGC -> Vehicle Configuration -> Flight Modes, set one switch for Loiter/AltHold/Stabilized, one for RTL
 # In QGC -> Vehicle Configuration -> Flight Safety, set RTL settings
 # In QGC -> Vehicle Configuration -> Sensors, calibrate accelerometer, level horizon, and compass (outdoors)
 ```
-
-For full `.params` files examples, check folder [`params/`](/tools_and_docs/docs/params/)

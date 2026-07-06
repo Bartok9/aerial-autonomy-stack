@@ -1,8 +1,8 @@
 # aerial-autonomy-stack
 
-*Aerial autonomy stack* (AAS) is a **batteries included** software stack to:
+*Aerial autonomy stack* (AAS) is a "batteries included" open software and the simplest/fastest way to:
 
-1. **Develop** multi-drone autonomy—with ROS2, PX4, and ArduPilot
+1. **Develop** multi-drone autonomy—with PX4, ArduPilot, and ROS2
 2. **Simulate** faster-than-real-time perception and control—with YOLO and 3D LiDAR
 3. **Deploy** in real drones—with JetPack, DeepStream, and NVIDIA Orin
 
@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/57e5bc91-8bee-4bae-8f81-a9aacef471e7
 <details>
 <summary><b>Features</b> <i>(click to expand)</i></summary>
 
-- **PX4 and ArduPilot multi-vehicle** simulation (**quadrotors and VTOLs**)
+- **PX4 and ArduPilot multi-vehicle** simulation (**quadrotors, quadplane VTOLs, and tailsitters**)
 - ROS2 action-based autopilot interface (*via* XRCE-DDS or MAVROS)
 - **YOLO** (with ONNX GPU Runtimes) and **LiDAR** Odometry (with [KISS-ICP](https://github.com/PRBonn/kiss-icp))
 - 3D worlds for perception-based simulation
@@ -38,7 +38,10 @@ https://github.com/user-attachments/assets/57e5bc91-8bee-4bae-8f81-a9aacef471e7
 
 ```sh
 sudo apt update && sudo apt install -y git xterm xfonts-base wget unzip
-git clone https://github.com/JacopoPan/aerial-autonomy-stack.git && cd aerial-autonomy-stack/tools_and_docs/
+
+git clone https://github.com/JacopoPan/aerial-autonomy-stack.git
+cd aerial-autonomy-stack/tools_and_docs/
+
 ./tests/check_requirements.sh                         # AAS requires nvidia-driver-580, docker, and nvidia-container-toolkit
 ./sim_build.sh                                        # The 1st build takes ~45' with good internet (`Ctrl + c` and restart if needed, cached stages will be preserved)
 ```
@@ -65,22 +68,31 @@ Start AAS:
 
 ```sh
 cd aerial-autonomy-stack/tools_and_docs/
-AUTOPILOT=px4 NUM_QUADS=1 NUM_VTOLS=1 WORLD=swiss_town HEADLESS=false RTF=3.0 ./sim_run.sh    # Start a simulation, check the script for more options (note: ArduPilot SITL checks take ~30s of simulated time before being ready to arm)
+
+NUM_QUADS=1 NUM_VTOLS=1 WORLD=swiss_town RTF=3 ./sim_run.sh    # Start a simulation, check the script for more options (note: ArduPilot SITL checks take ~30s of simulated time before being ready to arm)
+
+# Simulation options:
+#  AUTOPILOT=px4, ardupilot
+#  HEADLESS/CAMERA/LIDAR=true, false
+#  NUM_QUADS/NUM_VTOLS/NUM_TAILS=0, 1, ...
+#  WORLD=impalpable_greyness, apple_orchard, shibuya_crossing, swiss_town, waterworld
+#  RTF=1, 2, ... (real-time-factor, use 0 for "as fast as possible)
+#  INSTANCE=0, 1, ... (integer ID to run multiple parallel simulations)
 ```
 
-There are **3 main ways** to autonomously fly the drones (plus QGroundControl for operator supervision)
+There are **3 different ways** to autonomously fly the drones (plus QGroundControl for operator supervision)
 
-1. From the `Ground`'s Xterm terminal, fly all drones in a **synchronized formation** with [`dtc_controller_node`](/ground/ground_ws/src/drone_traffic_controller/drone_traffic_controller/dtc_controller_node.py):
+1. From the `Ground`'s terminal, fly all drones in a **synchronized formation** with [`dtc_controller_node`](/ground/ground_ws/src/drone_traffic_controller/drone_traffic_controller/dtc_controller_node.py):
 ```sh
 ros2 run drone_traffic_controller dtc_controller --ros-args -p use_sim_time:=true
 ```
 
-2. From any `QUAD`/`VTOL` Xterm terminal, fly a **behavior tree mission** (e.g., [`yalla.yaml`](/aircraft/aircraft_resources/missions/yalla.yaml)):
+2. From any `QUAD`/`VTOL`/`TAIL` terminal, fly its own **behavior tree mission** (e.g., [`yalla.yaml`](/aircraft/aircraft_resources/missions/yalla.yaml)):
 ```sh
 ros2 run mission mission --conops yalla.yaml --ros-args -r __ns:=/Drone$DRONE_ID -p use_sim_time:=true
 ```
 
-3. From any `QUAD`/`VTOL` Xterm terminal, use **ROS2 actions** for [`px4_offboard`](/aircraft/aircraft_ws/src/offboard_control/src/px4_offboard.cpp)/[`ardupilot_guided`](/aircraft/aircraft_ws/src/offboard_control/src/ardupilot_guided.cpp):
+3. From any `QUAD`/`VTOL`/`TAIL` terminal, use **ROS2 actions** for [`px4_offboard`](/aircraft/aircraft_ws/src/offboard_control/src/px4_offboard.cpp)/[`ardupilot_guided`](/aircraft/aircraft_ws/src/offboard_control/src/ardupilot_guided.cpp) controllers:
 ```sh
 cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/takeoff_action \
     autopilot_interface_msgs/action/Takeoff '{takeoff_altitude: 30.0}'"
@@ -90,17 +102,6 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
     autopilot_interface_msgs/action/Offboard \
     '{controller_name: att-test, max_duration_sec: 10.0}'"
 # Add or re-implement offboard controllers in `px4_offboard.cpp`, `ardupilot_guided.cpp`
-```
-
-`./sim_run.sh` options:
-
-```
-- AUTOPILOT=px4, ardupilot
-- HEADLESS/CAMERA/LIDAR=true, false
-- NUM_QUADS/NUM_VTOLS=0, 1, ...
-- WORLD=impalpable_greyness, apple_orchard, shibuya_crossing, swiss_town, waterworld
-- RTF=1.0, 2.0, ... (real-time-factor, use 0.0 for "as fast as possible)
-- INSTANCE=0, 1, ... (integer ID to run multiple parallel simulations)
 ```
 
 ![worlds](https://github.com/user-attachments/assets/b9f7635a-0b1f-4698-ba6a-70ab1b412aef)
@@ -121,13 +122,13 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
 > <summary>Use ROS2 drone and gimbal <b>control primitives</b> from CLI <i>(click to expand)</i></summary>
 >
 > ```sh
-> # Takeoff action (quads and VTOLs)
-> cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/takeoff_action autopilot_interface_msgs/action/Takeoff '{takeoff_altitude: 40.0, vtol_transition_heading: 330.0, vtol_loiter_nord: 200.0, vtol_loiter_east: 100.0, vtol_loiter_alt: 120.0}'"
+> # Takeoff action (quads and VTOLs/tailsitters)
+> cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/takeoff_action autopilot_interface_msgs/action/Takeoff '{takeoff_altitude: 40.0, vtol_transition_heading: 330.0, vtol_loiter_north: 200.0, vtol_loiter_east: 100.0, vtol_loiter_alt: 120.0}'"
 >
-> # Land (at home) action (quads and VTOLs)
+> # Land (at home) action (quads and VTOLs/tailsitters)
 > cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/land_action autopilot_interface_msgs/action/Land '{landing_altitude: 60.0, vtol_transition_heading: 60.0}'"
 >
-> # Orbit action (quads and VTOLs)
+> # Orbit action (quads and VTOLs/tailsitters)
 > cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/orbit_action autopilot_interface_msgs/action/Orbit '{east: 500.0, north: 0.0, altitude: 150.0, radius: 200.0}'"
 >
 > # Reposition service (quads only)
@@ -143,13 +144,13 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
 > ros2 topic echo /gimbal_state
 > ros2 topic pub -1 /gimbal_pitch_cmd std_msgs/msg/Float64 "{data: 1.57}"
 > ```
-> To analyze the flight logs, in the `Simulation`'s Xterm terminal:
+> To analyze the flight logs, in the `Simulation`'s terminal:
 > ```sh
 > /aas/simulation_resources/scripts/plot_logs.sh                                                # Analyze the flight logs at http://10.42.90.100:5006/browse or in MAVExplorer
 > ```
 > </details>
 > <details>
-> <summary>Add or disable <b>wind effects</b>, in the <kbd>Simulation</kbd>'s Xterm terminal <i>(click to expand)</i></summary>
+> <summary>Add or disable <b>wind effects</b>, in the <kbd>Simulation</kbd>'s terminal <i>(click to expand)</i></summary>
 > 
 > ```sh
 > python3 /aas/simulation_resources/scripts/gz_wind.py --from_west 0.0 --from_south 3.0
@@ -166,31 +167,33 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
 > DEV=true ./sim_run.sh                                                                       # Starts one simulation-image, one ground-image, and one aircraft-image where the *_resources/ and *_ws/src/ folders are mounted from the host
 > ```
 > 
-> To build changes—**made on the host**—in the `Ground` or `QUAD` Xterm terminal:
+> To build changes—**made on the host**—in the `Ground` or `QUAD` terminal:
 > 
 > ```sh
 > cd /aas/aircraft_ws/                                                                        # Or cd /aas/ground_ws/
 > colcon build --symlink-install
 > ```
 > 
-> To start the simulation, in the `QUAD` Xterm terminal:
+> To start the simulation, in the `QUAD` terminal:
 > 
 > ```sh
 > tmuxinator start -p /aas/aircraft.yml.erb
 > ```
 > 
-> In the `Ground` Xterm terminal:
+> In the `Ground` terminal:
 > ```sh
 > tmuxinator start -p /aas/ground.yml.erb
 > ```
 > 
-> In the `Simulation` Xterm terminal:
+> In the `Simulation` terminal:
 > ```sh
 > tmuxinator start -p /aas/simulation.yml.erb
 > ```
 > 
 > To end the simulation, in each terminal detach Tmux with `Ctrl + b`, then `d`; kill all lingering processes with `tmux kill-server && pkill -f gz`
 > </details>
+
+![vio](https://github.com/user-attachments/assets/b1a97041-a508-4365-8197-9bf6ba32bcc1)
 
 ## 3. Deployment on Jetson
 
@@ -204,7 +207,10 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
 
 ```sh
 sudo apt update && sudo apt install -y git
-git clone https://github.com/JacopoPan/aerial-autonomy-stack.git && cd aerial-autonomy-stack/tools_and_docs/
+
+git clone https://github.com/JacopoPan/aerial-autonomy-stack.git
+cd aerial-autonomy-stack/tools_and_docs/
+
 ./deploy_build.sh                                     # Build for arm64, on Jetson Orin NX the first build takes ~50', including building onnxruntime-gpu with TensorRT support from source
 ```
 
@@ -214,23 +220,21 @@ On a Jetson Orin, start the `aircraft-image`:
 
 ```sh
 cd aerial-autonomy-stack/tools_and_docs/
-AUTOPILOT=px4 DRONE_ID=1 CAMERA=true LIDAR=false AIR_SUBNET=10.223 HEADLESS=true ./deploy_run.sh
-# The 1st run of `./deploy_run.sh` requires ~10' to build the FP16 TensorRT cache
-```
 
-`./deploy_run.sh` options:
+DRONE_ID=1 CAMERA=true LIDAR=false AIR_SUBNET=10.223 HEADLESS=true ./deploy_run.sh    # The 1st run of `./deploy_run.sh` requires ~10' to build the FP16 TensorRT cache
 
-```
-- DRONE_TYPE=quad, vtol
-- AUTOPILOT=px4, ardupilot
-- DRONE_ID=1, 2, ... (ROS_DOMAIN_ID of the drone, matching the MAV_SYS_ID/SYSID_THISMAV of the autpilot)
-- HEADLESS/CAMERA/LIDAR=true, false
+# Deployment options:
+#  DRONE_TYPE=quad, vtol, tail
+#  AUTOPILOT=px4, ardupilot
+#  DRONE_ID=1, 2, ... (ROS_DOMAIN_ID of the drone, matching the MAV_SYS_ID/SYSID_THISMAV of the autpilot)
+#  HEADLESS/CAMERA/LIDAR=true, false
 ```
 
 On a laptop, start the `ground-image` (QGC, Zenoh, SSH, and GStreamer):
 
 ```sh
 cd aerial-autonomy-stack/tools_and_docs/
+
 ./sim_build.sh                                        # Build all images for amd64, including ground-image
 GROUND=true NUM_QUADS=1 AIR_SUBNET=10.223 HEADLESS=false ./deploy_run.sh
 ```
@@ -306,7 +310,8 @@ pip3 install -e .
 Examples:
 ```sh
 conda activate aas                                    # If using Anaconda
-cd aerial-autonomy-stack/tools_and_docs
+cd aerial-autonomy-stack/tools_and_docs/
+
 python3 gym_run.py --mode step                        # Manually step AAS @1Hz
 python3 gym_run.py --mode speedup                     # Speed-up test @50Hz
 python3 gym_run.py --mode vectorenv-speedup           # Vectorized speed-up test @50Hz
@@ -450,11 +455,13 @@ aerial-autonomy-stack
 │   │   ├── aircraft_models
 │   │   │   ├── alti_transition_quad                  # ArduPilot VTOL model
 │   │   │   ├── iris_with_ardupilot                   # ArduPilot quad model
+│   │   │   ├── swan_k1_hwing                         # ArduPilot tailsitter model
 │   │   │   ├── sensor_camera                         # Camera model
 │   │   │   ├── sensor_gimbal                         # 3D gimbal used with sensor_camera
 │   │   │   ├── sensor_lidar                          # LiDAR model
 │   │   │   ├── standard_vtol                         # PX4 VTOL model
 │   │   │   ├── x500                                  # PX4 quad model
+│   │   │   ├── quadtailsitter                        # PX4 tailsitter model
 │   │   │   └── sensor_config.yaml                    # Intrinsics and extrinsics for all sensor and vehicle models
 │   │   └── simulation_worlds
 │   │       ├── apple_orchard.sdf
@@ -526,7 +533,6 @@ External repositories:
 - [`microsoft/onnxruntime`](https://github.com/microsoft/onnxruntime) tag/branch: `v1.23.2`
 - [`Livox-SDK/Livox-SDK2`](https://github.com/Livox-SDK/Livox-SDK2) tag/branch: `master`
 - [`Livox-SDK/livox_ros_driver2`](https://github.com/Livox-SDK/livox_ros_driver2) tag/branch: `master`
-</details>
 
 ---
 > You've done a man's job, sir. I guess you're through, huh?
@@ -545,12 +551,13 @@ docker exec -it aircraft-container-inst0_1 tmux attach
 ## Known Issues
 
 - ArduPilot SITL for Iris uses option -f that also sets "external": True, this is not the case for the Alti Transition from ArduPilot/SITL_Models
+- ArduPilot SITL crashes when the swan_k1_hwing tailsitter model lands
 - QGC will only connect to the first 10 ArduPilot vehicles when GND_CONTAINER=false because of settings in QGroundControl.ini
 - Gazebo WindEffects plugin affects cruise speeds and it is disabled for the standard_vtol's model.sdf.erb
 - Command 178 MAV_CMD_DO_CHANGE_SPEED is accepted but not effective in changing speed for ArduPilot VTOL
-- In ArdupilotInterface's action callbacks, std::shared_lock<std::shared_mutex> lock(node_data_mutex_); could be used on the reads of lat_, lon_, alt_
 - QGC does not save roll and pitch in the telemetry bar for PX4 VTOLs (MAV_TYPE 22)
 - PX4 quad max tilt is limited by the anti-windup gain (zero it to deactivate it): const float arw_gain = 2.f / _gain_vel_p(0);
+- On Jetson, if yolo_py crashes, run `sudo systemctl restart nvargus-daemon` on the host
 
 ## Docker Basics
 
@@ -615,7 +622,6 @@ Ctrl + b, then d                      # Detach Tmux
     - https://github.com/PegasusSimulator/PegasusSimulator
 - Integrate more realistic flight dynamics (e.g., JSBSim)
     - https://github.com/JSBSim-Team/jsbsim
-- Integrate a VLA model bridging the `yolo_py` and `mission` packages
 - Re-instate Gazebo Sim support for Pixhawk HITL simulation using MAVLink HIL_ interface
     - https://mavlink.io/en/messages/common.html
     - https://github.com/tiiuae/px4-gzsim-plugins/

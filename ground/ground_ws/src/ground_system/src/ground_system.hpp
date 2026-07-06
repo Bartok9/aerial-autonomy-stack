@@ -58,7 +58,7 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 
     // Methods
-    void mavlink_listener(int drone_id, int port);
+    void mavlink_listener(int drone_id, int port, int thread_idx);
     void publish_swarm_obs();
     double add_noise(double value, double std_dev);
 };
