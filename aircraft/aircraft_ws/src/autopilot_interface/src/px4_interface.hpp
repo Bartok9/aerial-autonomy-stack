@@ -114,7 +114,8 @@ private:
     rclcpp::Subscription<VehicleCommandAck>::SharedPtr vehicle_command_ack_sub_;
 
     // Subscribers variables
-    int target_system_id_, arming_state_, vehicle_type_;
+    std::atomic<int> target_system_id_;
+    int arming_state_, vehicle_type_;
     bool is_vtol_, is_vtol_tailsitter_, in_transition_mode_, in_transition_to_fw_, pre_flight_checks_pass_;
     double lat_, lon_, alt_, alt_ellipsoid_;
     bool xy_valid_, z_valid_, v_xy_valid_, v_z_valid_, xy_global_, z_global_;
@@ -182,14 +183,14 @@ private:
     void takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::ServerGoalHandle<autopilot_interface_msgs::action::Takeoff>> goal_handle);
 
     // vehicle_command methods
-    void do_takeoff(double alt, double yaw);
-    void do_orbit(double lat, double lon, double alt, double r, double speed = NAN);
-    void do_change_altitude(double alt);
+    void do_takeoff(double alt, double yaw, bool is_vtol, double home_lat, double home_lon, double home_alt);
+    void do_orbit(double lat, double lon, double alt, double r, double speed, double home_alt);
+    void do_change_altitude(double alt, double home_alt);
     void do_change_speed(double speed);
-    void do_reposition(double lat, double lon, double alt, double heading = 0.0);
+    void do_reposition(double lat, double lon, double alt, double heading, double home_alt);
     void do_vtol_transition(int trans_type);
     void do_rtl();
-    void do_land();
+    void do_land(double home_lat, double home_lon, double home_alt);
     void do_set_mode(int mode, int submode);
     void send_vehicle_command(int command, double param1 = 0.0, double param2 = 0.0, double param3 = 0.0, 
                                 double param4 = 0.0, double param5 = 0.0, double param6 = 0.0, double param7 = 0.0, 

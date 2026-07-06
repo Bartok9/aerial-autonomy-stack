@@ -182,7 +182,7 @@ void PX4Interface::status_callback(const VehicleStatus::SharedPtr msg)
     std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
     if (target_system_id_ == -1) {
         target_system_id_ = msg->system_id; // get target_system_id from PX4's MAV_SYS_ID once
-        RCLCPP_WARN(get_logger(), "target_system_id (MAV_SYS_ID) saved as: %d", target_system_id_);
+        RCLCPP_WARN(get_logger(), "target_system_id (MAV_SYS_ID) saved as: %d", target_system_id_.load());
     }
     arming_state_ = msg->arming_state; // DISARMED = 1, ARMED = 2
     vehicle_type_ = msg->vehicle_type; // ROTARY_WING = 1, FIXED_WING = 2 (ROVER = 3)
@@ -260,7 +260,7 @@ void PX4Interface::px4_interface_printout_callback()
                 "Offboard flag rate:\n"
                 "  %.2f Hz\n\n",
                 //
-                target_system_id_, arming_state_, vehicle_type_,
+                target_system_id_.load(), arming_state_, vehicle_type_,
                 (is_vtol_ ? "true" : "false"),
                 (is_vtol_tailsitter_ ? "true" : "false"),
                 (in_transition_mode_ ? "true" : "false"),
@@ -359,7 +359,7 @@ void PX4Interface::set_reposition_callback(const std::shared_ptr<autopilot_inter
     auto [des_lat, des_lon] = lat_lon_from_cartesian(home_lat_, home_lon_, desired_east, desired_north);
     double distance, heading, azi2;
     geod.Inverse(lat_, lon_, des_lat, des_lon, distance, heading, azi2);
-    do_reposition(des_lat, des_lon, desired_alt, fmod(heading + 360.0, 360.0) / 180.0 * M_PI);
+    do_reposition(des_lat, des_lon, desired_alt, fmod(heading + 360.0, 360.0) / 180.0 * M_PI, home_alt_);
     response->success = true;
     response->message = "set_reposition request sent";
     active_srv_or_act_flag_.store(false);
@@ -401,9 +401,16 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
         landing_loop_rate.sleep();
 
         PX4InterfaceState current_fsm_state;
+        bool is_vtol, is_vtol_tailsitter, in_transition_mode;
+        int vehicle_type;
+        double lat, lon, alt, home_lat, home_lon, home_alt;
         {
             std::shared_lock<std::shared_mutex> lock(node_data_mutex_);
             current_fsm_state = aircraft_fsm_state_;
+            is_vtol = is_vtol_; is_vtol_tailsitter = is_vtol_tailsitter_;
+            in_transition_mode = in_transition_mode_; vehicle_type = vehicle_type_;
+            lat = lat_; lon = lon_; alt = alt_;
+            home_lat = home_lat_; home_lon = home_lon_; home_alt = home_alt_;
         }
 
         if (goal_handle->is_canceling()) { // Check if there is a cancel request
@@ -416,7 +423,7 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
             return;
         }
 
-        if (is_vtol_ == false) {
+        if (is_vtol == false) {
             if (current_fsm_state == PX4InterfaceState::MC_ORBIT) {
                 do_set_mode(4, 3); // If in an Orbit mode, switch to Hold mode
                 {
@@ -427,8 +434,8 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
             }
             if (current_fsm_state == PX4InterfaceState::MC_HOVER) {
                 double distance, heading, azi2;
-                geod.Inverse(lat_, lon_, home_lat_, home_lon_, distance, heading, azi2);
-                do_reposition(home_lat_, home_lon_, landing_altitude, fmod(heading + 360.0, 360.0) / 180.0 * M_PI);
+                geod.Inverse(lat, lon, home_lat, home_lon, distance, heading, azi2);
+                do_reposition(home_lat, home_lon, landing_altitude, fmod(heading + 360.0, 360.0) / 180.0 * M_PI, home_alt);
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::RTL;
@@ -437,9 +444,9 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                 goal_handle->publish_feedback(feedback);
             } else if (current_fsm_state == PX4InterfaceState::RTL) {
                 double distance_from_home_in_meters;
-                geod.Inverse(lat_, lon_, home_lat_, home_lon_, distance_from_home_in_meters);
+                geod.Inverse(lat, lon, home_lat, home_lon, distance_from_home_in_meters);
                 if (distance_from_home_in_meters < LAND_INIT_DIST_THRESH) {
-                    do_land();
+                    do_land(home_lat, home_lon, home_alt);
                     {
                         std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                         aircraft_fsm_state_ = PX4InterfaceState::MC_LANDING;
@@ -449,15 +456,15 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                     goal_handle->publish_feedback(feedback);
                 }
             }
-        } else if (is_vtol_ == true) {
+        } else if (is_vtol == true) {
             double loiter_alt_low = VTOL_LAND_LOITER_ALT_LOW;
             double pre_landing_loiter_radius = VTOL_LAND_LOITER_RADIUS;
             double pre_landing_loiter_distance = VTOL_LAND_LOITER_DIST;
             double angle_correction_deg = atan(pre_landing_loiter_radius/pre_landing_loiter_distance) * 180.0 / M_PI;
             if (current_fsm_state == PX4InterfaceState::FW_CRUISE) {
                 double loiter_alt_hi = VTOL_LAND_LOITER_ALT_HIGH;
-                auto [des_lat, des_lon] = lat_lon_from_polar(home_lat_, home_lon_, pre_landing_loiter_distance, vtol_transition_heading + 180.0 - angle_correction_deg);
-                do_orbit(des_lat, des_lon, loiter_alt_hi, pre_landing_loiter_radius, NAN);
+                auto [des_lat, des_lon] = lat_lon_from_polar(home_lat, home_lon, pre_landing_loiter_distance, vtol_transition_heading + 180.0 - angle_correction_deg);
+                do_orbit(des_lat, des_lon, loiter_alt_hi, pre_landing_loiter_radius, NAN, home_alt);
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::FW_LANDING_LOITER;
@@ -465,11 +472,11 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                 feedback->message = "Going to landing loiter";
                 goal_handle->publish_feedback(feedback);
             } else if (current_fsm_state == PX4InterfaceState::FW_LANDING_LOITER) {
-                auto [des_lat, des_lon] = lat_lon_from_polar(home_lat_, home_lon_, pre_landing_loiter_distance, vtol_transition_heading + 180.0 - angle_correction_deg);
+                auto [des_lat, des_lon] = lat_lon_from_polar(home_lat, home_lon, pre_landing_loiter_distance, vtol_transition_heading + 180.0 - angle_correction_deg);
                 double distance_from_loiter_in_meters;
-                geod.Inverse(lat_, lon_, des_lat, des_lon, distance_from_loiter_in_meters);
+                geod.Inverse(lat, lon, des_lat, des_lon, distance_from_loiter_in_meters);
                 if (distance_from_loiter_in_meters < (pre_landing_loiter_radius + VTOL_LAND_LOITER_STARTED_DIST_THRESH) && distance_from_loiter_in_meters > (pre_landing_loiter_radius - VTOL_LAND_LOITER_STARTED_DIST_THRESH)) {
-                    do_orbit(des_lat, des_lon, loiter_alt_low, pre_landing_loiter_radius, NAN);
+                    do_orbit(des_lat, des_lon, loiter_alt_low, pre_landing_loiter_radius, NAN, home_alt);
                     {
                         std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                         aircraft_fsm_state_ = PX4InterfaceState::FW_LANDING_DESCENT;
@@ -478,12 +485,12 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                     goal_handle->publish_feedback(feedback);
                 }
             } else if (current_fsm_state == PX4InterfaceState::FW_LANDING_DESCENT) {
-                auto [exit_lat, exit_lon] = lat_lon_from_polar(home_lat_, home_lon_, pre_landing_loiter_distance, vtol_transition_heading + 180.0);
+                auto [exit_lat, exit_lon] = lat_lon_from_polar(home_lat, home_lon, pre_landing_loiter_distance, vtol_transition_heading + 180.0);
                 double distance_from_exit_in_meters;
-                geod.Inverse(lat_, lon_, exit_lat, exit_lon, distance_from_exit_in_meters);
-                if (distance_from_exit_in_meters < VTOL_LAND_LOITER_EXIT_DIST_THRESH && std::abs(alt_ - (home_alt_ + loiter_alt_low)) < VTOL_LAND_LOITER_EXIT_ALT_THRESH) { // Exit from the loiter tangentially if distance and altitude requirements are met
-                    auto [des_lat, des_lon] = lat_lon_from_polar(home_lat_, home_lon_, VTOL_LAND_FAKE_REPOSITION_DISTANCE, vtol_transition_heading); // Fake reposition behind the home point to fly over the home point
-                    do_reposition(des_lat, des_lon, landing_altitude, NAN); // NOTE: this is only to give the VTOL a waypoint on the other side of the landing area
+                geod.Inverse(lat, lon, exit_lat, exit_lon, distance_from_exit_in_meters);
+                if (distance_from_exit_in_meters < VTOL_LAND_LOITER_EXIT_DIST_THRESH && std::abs(alt - (home_alt + loiter_alt_low)) < VTOL_LAND_LOITER_EXIT_ALT_THRESH) { // Exit from the loiter tangentially if distance and altitude requirements are met
+                    auto [des_lat, des_lon] = lat_lon_from_polar(home_lat, home_lon, VTOL_LAND_FAKE_REPOSITION_DISTANCE, vtol_transition_heading); // Fake reposition behind the home point to fly over the home point
+                    do_reposition(des_lat, des_lon, landing_altitude, NAN, home_alt); // NOTE: this is only to give the VTOL a waypoint on the other side of the landing area
                     {
                         std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                         aircraft_fsm_state_ = PX4InterfaceState::FW_LANDING_APPROACH;
@@ -493,8 +500,8 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                 }
             } else if (current_fsm_state == PX4InterfaceState::FW_LANDING_APPROACH) {
                 double distance_from_home_in_meters;
-                geod.Inverse(lat_, lon_, home_lat_, home_lon_, distance_from_home_in_meters);
-                double landing_transition_distance = is_vtol_tailsitter_ ? TAIL_LAND_TRANSITION_START_DISTANCE : VTOL_LAND_TRANSITION_START_DISTANCE;
+                geod.Inverse(lat, lon, home_lat, home_lon, distance_from_home_in_meters);
+                double landing_transition_distance = is_vtol_tailsitter ? TAIL_LAND_TRANSITION_START_DISTANCE : VTOL_LAND_TRANSITION_START_DISTANCE;
                 if (distance_from_home_in_meters < landing_transition_distance) {
                     do_vtol_transition(3.0); // 3 is MAV_VTOL_STATE_MC
                     {
@@ -504,8 +511,8 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                     feedback->message = "Transitioning to MC mode";
                     goal_handle->publish_feedback(feedback);
                 }
-            } else if (current_fsm_state == PX4InterfaceState::VTOL_LANDING_TRANSITION && !in_transition_mode_ && vehicle_type_ == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_ROTARY_WING) {
-                do_reposition(home_lat_, home_lon_, landing_altitude, NAN); // NOTE: the VTOL is in quad mode
+            } else if (current_fsm_state == PX4InterfaceState::VTOL_LANDING_TRANSITION && !in_transition_mode && vehicle_type == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_ROTARY_WING) {
+                do_reposition(home_lat, home_lon, landing_altitude, NAN, home_alt); // NOTE: the VTOL is in quad mode
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::RTL;
@@ -514,9 +521,9 @@ void PX4Interface::land_handle_accepted(const std::shared_ptr<rclcpp_action::Ser
                 goal_handle->publish_feedback(feedback);
             } else if (current_fsm_state == PX4InterfaceState::RTL) {
                 double distance_from_home_in_meters;
-                geod.Inverse(lat_, lon_, home_lat_, home_lon_, distance_from_home_in_meters);
+                geod.Inverse(lat, lon, home_lat, home_lon, distance_from_home_in_meters);
                 if (distance_from_home_in_meters < LAND_INIT_DIST_THRESH) {
-                    do_land();
+                    do_land(home_lat, home_lon, home_alt);
                     {
                         std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                         aircraft_fsm_state_ = PX4InterfaceState::MC_LANDING;
@@ -570,6 +577,12 @@ void PX4Interface::offboard_handle_accepted(const std::shared_ptr<rclcpp_action:
     while (offboarding) {
         offboard_loop_rate.sleep();
 
+        bool is_vtol;
+        {
+            std::shared_lock<std::shared_mutex> lock(node_data_mutex_);
+            is_vtol = is_vtol_;
+        }
+
         if (goal_handle->is_canceling()) { // Check if there is a cancel request
             abort_action(); // Sets active_srv_or_act_flag_ to false, aircraft_fsm_state_ to MC_HOVER or FW_CRUISE
             feedback->message = "Canceling offboard";
@@ -599,7 +612,7 @@ void PX4Interface::offboard_handle_accepted(const std::shared_ptr<rclcpp_action:
             do_set_mode(4, 3); // Auto/Loiter (PX4_CUSTOM_MAIN_MODE 4/PX4_CUSTOM_SUB_MODE_AUTO 3)
             {
                 std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
-                aircraft_fsm_state_ = is_vtol_ ? PX4InterfaceState::FW_CRUISE : PX4InterfaceState::MC_HOVER;
+                aircraft_fsm_state_ = is_vtol ? PX4InterfaceState::FW_CRUISE : PX4InterfaceState::MC_HOVER;
             }
             feedback->message = "Exiting offboard control at t=" + std::to_string(current_time_us) + "us, returning to loiter/hover (Hold) state";
             goal_handle->publish_feedback(feedback);
@@ -650,6 +663,14 @@ void PX4Interface::orbit_handle_accepted(const std::shared_ptr<rclcpp_action::Se
     while (orbiting) {
         orbit_loop_rate.sleep();
 
+        bool is_vtol;
+        double home_lat, home_lon, home_alt;
+        {
+            std::shared_lock<std::shared_mutex> lock(node_data_mutex_);
+            is_vtol = is_vtol_;
+            home_lat = home_lat_; home_lon = home_lon_; home_alt = home_alt_;
+        }
+
         if (goal_handle->is_canceling()) { // Check if there is a cancel request
             abort_action(); // Sets active_srv_or_act_flag_ to false, aircraft_fsm_state_ to MC_HOVER or FW_CRUISE
             feedback->message = "Canceling orbit";
@@ -661,16 +682,16 @@ void PX4Interface::orbit_handle_accepted(const std::shared_ptr<rclcpp_action::Se
         }
 
         RCLCPP_INFO(this->get_logger(), "New requested orbit East-North %.2f %.2f Alt. %.2f Radius %.2f", desired_east, desired_north, desired_alt, desired_r);
-        auto [des_lat, des_lon] = lat_lon_from_cartesian(home_lat_, home_lon_, desired_east, desired_north);
-        if (!is_vtol_) {
-            do_orbit(des_lat, des_lon, desired_alt, desired_r, MC_ORBIT_SPEED_MS);
+        auto [des_lat, des_lon] = lat_lon_from_cartesian(home_lat, home_lon, desired_east, desired_north);
+        if (!is_vtol) {
+            do_orbit(des_lat, des_lon, desired_alt, desired_r, MC_ORBIT_SPEED_MS, home_alt);
             RCLCPP_WARN(this->get_logger(), "For quads, the orbit speed is determined by constant MC_ORBIT_SPEED_MS");
             {
                 std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                 aircraft_fsm_state_ = PX4InterfaceState::MC_ORBIT; // For quads, this is a flight mode change, keep track of it
             }
-        } else if (is_vtol_) {
-            do_orbit(des_lat, des_lon, desired_alt, desired_r, NAN);
+        } else if (is_vtol) {
+            do_orbit(des_lat, des_lon, desired_alt, desired_r, NAN, home_alt);
         }
         feedback->message = "Orbit sent";
         goal_handle->publish_feedback(feedback);
@@ -730,9 +751,14 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
         takeoff_loop_rate.sleep();
 
         PX4InterfaceState current_fsm_state;
+        bool is_vtol;
+        int vehicle_type;
+        double alt, home_lat, home_lon, home_alt;
         {
             std::shared_lock<std::shared_mutex> lock(node_data_mutex_);
             current_fsm_state = aircraft_fsm_state_;
+            is_vtol = is_vtol_; vehicle_type = vehicle_type_;
+            alt = alt_; home_lat = home_lat_; home_lon = home_lon_; home_alt = home_alt_;
         }
 
         if (goal_handle->is_canceling()) { // Check if there is a cancel request
@@ -745,9 +771,9 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
             return;
         }
 
-        if (is_vtol_ == false) {
+        if (is_vtol == false) {
             if (current_fsm_state == PX4InterfaceState::STARTED) {
-                do_takeoff(takeoff_altitude, NAN); // TODO: currently, there's no heading takeoff for multirotors
+                do_takeoff(takeoff_altitude, NAN, is_vtol, home_lat, home_lon, home_alt); // TODO: currently, there's no heading takeoff for multirotors
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::MC_TAKEOFF;
@@ -755,7 +781,7 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
                 feedback->message = "Taking off in MC mode";
                 goal_handle->publish_feedback(feedback);
             } else if (current_fsm_state == PX4InterfaceState::MC_TAKEOFF) {
-                if ((alt_ - home_alt_) > MC_TAKEOFF_COMPLETED_RATIO * takeoff_altitude) {
+                if ((alt - home_alt) > MC_TAKEOFF_COMPLETED_RATIO * takeoff_altitude) {
                     {
                         std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                         aircraft_fsm_state_ = PX4InterfaceState::MC_HOVER;
@@ -765,10 +791,10 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
                     goal_handle->publish_feedback(feedback);
                 }
             }
-        } else if (is_vtol_ == true) {
+        } else if (is_vtol == true) {
             uint64_t current_time_us = this->get_clock()->now().nanoseconds() / 1000;  // Convert to microseconds
             if (current_fsm_state == PX4InterfaceState::STARTED) {
-                do_takeoff(takeoff_altitude, vtol_transition_heading);
+                do_takeoff(takeoff_altitude, vtol_transition_heading, is_vtol, home_lat, home_lon, home_alt);
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::MC_TAKEOFF;
@@ -776,7 +802,7 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
                 feedback->message = "Taking off in MC mode";
                 goal_handle->publish_feedback(feedback);
             } else if (current_fsm_state == PX4InterfaceState::MC_TAKEOFF) {
-                if (vehicle_type_ == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_FIXED_WING) {
+                if (vehicle_type == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_FIXED_WING) {
                     {
                         std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                         aircraft_fsm_state_ = PX4InterfaceState::VTOL_TAKEOFF_TRANSITION;
@@ -787,8 +813,8 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
                 }
             } else if (current_fsm_state == PX4InterfaceState::VTOL_TAKEOFF_TRANSITION &&
                 (current_time_us > (time_of_vtol_transition_us + VTOL_TAKEOFF_TRANSITION_WAIT_SEC * 1000000))) {
-                auto [des_lat, des_lon] = lat_lon_from_cartesian(home_lat_, home_lon_, vtol_loiter_east, vtol_loiter_north);
-                do_orbit(des_lat, des_lon, vtol_loiter_alt, VTOL_TAKEOFF_LOITER_RADIUS, NAN);
+                auto [des_lat, des_lon] = lat_lon_from_cartesian(home_lat, home_lon, vtol_loiter_east, vtol_loiter_north);
+                do_orbit(des_lat, des_lon, vtol_loiter_alt, VTOL_TAKEOFF_LOITER_RADIUS, NAN, home_alt);
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::FW_CRUISE;
@@ -806,7 +832,7 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
 }
 
 // vehicle_commands
-void PX4Interface::do_takeoff(double alt, double yaw) {
+void PX4Interface::do_takeoff(double alt, double yaw, bool is_vtol, double home_lat, double home_lon, double home_alt) {
     // Send arm command 3 times
     for (int i = 0; i < 3; ++i) {
         send_vehicle_command(
@@ -818,37 +844,37 @@ void PX4Interface::do_takeoff(double alt, double yaw) {
             i  // Confirmation, up to 255
         );
     }
-    if (is_vtol_ == false) {
+    if (is_vtol == false) {
         send_vehicle_command(
             22,  // VEHICLE_CMD_NAV_TAKEOFF
             0.0,  // Unused
             0.0,  // Takeoff mode (specified) works with custom implementation of navigator_main.cpp and vtol_takeoff.cpp in PX4
             0.0,  // Unused
             yaw,  // TODO: implement heading for multirotor takeoff
-            home_lat_,  // Latitude
-            home_lon_,  // Longitude
-            home_alt_ + alt,  // Altitude
+            home_lat,  // Latitude
+            home_lon,  // Longitude
+            home_alt + alt,  // Altitude
             0  // Confirmation
         );
-    } else if (is_vtol_ == true) {
+    } else if (is_vtol == true) {
         send_vehicle_command(
             84,  // VEHICLE_CMD_NAV_VTOL_TAKEOFF
             0.0,  // Unused
             3.0,  // Takeoff mode (specified) works with custom implementation of navigator_main.cpp and vtol_takeoff.cpp in PX4
             0.0,  // Unused
             yaw,  // Heading works with custom implementation of navigator_main.cpp and vtol_takeoff.cpp in PX4
-            home_lat_,  // Latitude
-            home_lon_,  // Longitude
-            home_alt_ + alt,  // Altitude
+            home_lat,  // Latitude
+            home_lon,  // Longitude
+            home_alt + alt,  // Altitude
             0  // Confirmation
         );
     }
 }
-void PX4Interface::do_change_altitude(double alt) // UNUSED
+void PX4Interface::do_change_altitude(double alt, double home_alt) // UNUSED
 {
     send_vehicle_command(
         186,  // VEHICLE_CMD_DO_CHANGE_ALTITUDE
-        home_alt_ + alt,  // New altitude
+        home_alt + alt,  // New altitude
         1.0,  // Global frame
         0.0, 0.0, 0.0, 0.0, 0.0,  // Unused parameters
         0  // Confirmation
@@ -864,7 +890,7 @@ void PX4Interface::do_change_speed(double speed)
         0  // Confirmation
     );
 }
-void PX4Interface::do_orbit(double lat, double lon, double alt, double r, double speed)
+void PX4Interface::do_orbit(double lat, double lon, double alt, double r, double speed, double home_alt)
 {
     send_vehicle_command(
         34,  // VEHICLE_CMD_DO_ORBIT
@@ -874,11 +900,11 @@ void PX4Interface::do_orbit(double lat, double lon, double alt, double r, double
         NAN,  // Number of loops in MAVLINK but unused in PX4
         lat,  // Target latitude
         lon,  // Target longitude
-        home_alt_ + alt,  // Altitude
+        home_alt + alt,  // Altitude
         0  // Confirmation
     );
 }
-void PX4Interface::do_reposition(double lat, double lon, double alt, double heading)
+void PX4Interface::do_reposition(double lat, double lon, double alt, double heading, double home_alt)
 {
     send_vehicle_command(
         192,  // MAV_CMD_DO_REPOSITION
@@ -886,7 +912,7 @@ void PX4Interface::do_reposition(double lat, double lon, double alt, double head
         heading, // Heading in radians, only used for quads
         lat,  // Latitude
         lon,  // Longitude
-        home_alt_ + alt,  // Altitude
+        home_alt + alt,  // Altitude
         0  // Confirmation
     );
 }
@@ -907,14 +933,14 @@ void PX4Interface::do_rtl() // UNUSED
         0  // Confirmation
     );
 }
-void PX4Interface::do_land()
+void PX4Interface::do_land(double home_lat, double home_lon, double home_alt)
 {
     send_vehicle_command(
         21,  // VEHICLE_CMD_NAV_LAND
         0.0, 0.0, 0.0, 0.0,  // Unused parameters
-        home_lat_,  // Latitude
-        home_lon_,  // Longitude
-        home_alt_,  // Ground altitude
+        home_lat,  // Latitude
+        home_lon,  // Longitude
+        home_alt,  // Ground altitude
         0  // Confirmation
     );
 }
@@ -959,14 +985,22 @@ void PX4Interface::send_vehicle_command(int command, double param1, double param
 }
 void PX4Interface::abort_action()
 {
-    if (vehicle_type_ == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_ROTARY_WING) {
-        do_reposition(lat_, lon_, ABORT_REPOSITION_ALT, NAN); // For quads, hover in place
+    int vehicle_type;
+    double lat, lon, home_lat, home_lon, home_alt;
+    {
+        std::shared_lock<std::shared_mutex> lock(node_data_mutex_);
+        vehicle_type = vehicle_type_;
+        lat = lat_; lon = lon_;
+        home_lat = home_lat_; home_lon = home_lon_; home_alt = home_alt_;
+    }
+    if (vehicle_type == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_ROTARY_WING) {
+        do_reposition(lat, lon, ABORT_REPOSITION_ALT, NAN, home_alt); // For quads, hover in place
         {
             std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
             aircraft_fsm_state_ = PX4InterfaceState::MC_HOVER;
         }
-    } else if (vehicle_type_ == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_FIXED_WING) {
-        do_reposition(home_lat_, home_lon_, ABORT_REPOSITION_ALT, NAN); // For VTOLs, reposition above home, the loiter radius is parameter NAV_LOITER_RAD
+    } else if (vehicle_type == px4_msgs::msg::VehicleStatus::VEHICLE_TYPE_FIXED_WING) {
+        do_reposition(home_lat, home_lon, ABORT_REPOSITION_ALT, NAN, home_alt); // For VTOLs, reposition above home, the loiter radius is parameter NAV_LOITER_RAD
         {
             std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
             aircraft_fsm_state_ = PX4InterfaceState::FW_CRUISE;

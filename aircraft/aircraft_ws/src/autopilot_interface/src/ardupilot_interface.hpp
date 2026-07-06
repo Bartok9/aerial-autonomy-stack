@@ -163,7 +163,8 @@ private:
     rclcpp::Client<WaypointSetCurrent>::SharedPtr set_wp_client_;
 
     // Subscribers variables
-    int target_system_id_, mav_state_, mav_type_;
+    std::atomic<int> target_system_id_;
+    int mav_state_, mav_type_;
     bool armed_flag_;
     std::string ardupilot_mode_;
     double lat_, lon_, alt_, alt_ellipsoid_;
