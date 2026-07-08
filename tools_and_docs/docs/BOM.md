@@ -174,9 +174,11 @@ WPNAV_SPEED_DN      150             # 1.5m/s descent rate in AUTO/GUIDED
 RTL_SPEED           500             # 5m/s maximum horizontal speed in RTL
 ACRO_Y_RATE         120             # 120 deg/s maximum yaw rate
 
-# Compass configuration (note: the order of the detected COMPASS_DEV_ID[2-8] may vary)
-# The 6X internal BMM150 compass should be automatically recognized with ID 331777
-# The F9P external IST8310 compass should be automatically recognized with ID 6589xx, auto-populating COMPASS_EXTERNAL, COMPASS_ORIENT
+# Compass configuration
+# The F9P external IST8310 compass should be automatically recognized with ID 6589xx on COMPASS_DEV_ID, auto-populating COMPASS_EXTERNAL, COMPASS_ORIENT
+# The 6X internal BMM150 compass should be automatically recognized with ID 331777 on COMPASS_DEV_ID2
+# Note: the order of the detected COMPASS_DEV_ID[2-8] varies and could become corrupted
+# To force a fresh reassignment of COMPASS_DEV_ID[2-8], backup the parameters, set FORMAT_VERSION 0, reboot, load the parameters, and re-calibate
 COMPASS_USE3        0               # Disable non-existent COMPASS_USE3, assuming the IST8310 and BMM150 are on COMPASS_DEV_ID and COMPASS_DEV_ID2, respectively
 COMPASS_EXTERNAL    1               # External, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID
 COMPASS_ORIENT      6               # Yaw270, assuming the IST8310/6589xx is recognized on COMPASS_DEV_ID, see: https://docs.holybro.com/gps-and-rtk-system/f9p-h-rtk-series/ardupilot-ist8310-compass-orientation
