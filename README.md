@@ -105,6 +105,8 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
 # Add or re-implement offboard controllers in `px4_offboard.cpp`, `ardupilot_guided.cpp`
 ```
 
+![logs](https://github.com/user-attachments/assets/d207f4da-6560-4d90-abf6-aac598a168c5)
+
 ![worlds](https://github.com/user-attachments/assets/b9f7635a-0b1f-4698-ba6a-70ab1b412aef)
 
 > `WORLD`s:
