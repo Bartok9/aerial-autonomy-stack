@@ -147,7 +147,12 @@ def main():
         envs.close()
 
     elif args.mode == "learn":
-        print("TODO")
+        print(
+            "Learning mode is not implemented yet (placeholder).\n"
+            "Use --mode step / speedup / vectorenv-speedup for sim benchmarks.\n"
+            "Gymnasium RL env work is tracked on the project roadmap (see open issues)."
+        )
+        raise SystemExit(2)
         # env = gym.make("AASEnv-v0")
         # try:
         #     # check_env(env) # Throws warning

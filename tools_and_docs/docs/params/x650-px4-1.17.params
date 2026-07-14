@@ -1,1 +1,10 @@
-TODO
+# Placeholder: Holybro X650 + PX4 1.17 parameters for aerial-autonomy-stack
+#
+# This file is intentionally not a loadable parameter dump.
+# Export a full set from PX4 / QGroundControl for your airframe after bench
+# calibration, then replace this placeholder when contributing a verified dump.
+#
+# For a complete ArduCopter example in the same kit family, see:
+#   x650-arducopter-4.6.params
+#
+# Related: tools_and_docs/docs/BOM.md (X650 kit) and SETUP_AVIONICS.md
