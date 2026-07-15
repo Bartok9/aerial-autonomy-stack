@@ -10,53 +10,64 @@ import os
 import sys
 import warnings
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pymap3d
 
-def read_ulg(ulg_file):
-    # Extract the lat, lon, alt trajectory and the saved home point from a PX4 .ulg log
-    from pyulog import ULog
-    ulog = ULog(ulg_file, ['vehicle_global_position', 'home_position', 'vehicle_local_position'])
-    data = ulog.get_dataset('vehicle_global_position').data
-    resets = data.get('lat_lon_reset_counter')
-    if resets is not None and resets[-1] != resets[0]:
-        print(f'Warning: {int(resets[-1]) - int(resets[0])} EKF lat/lon reset(s) during {os.path.basename(ulg_file)}')
-    try:
-        home = ulog.get_dataset('home_position').data
-        home = (home['lat'][0], home['lon'][0], home['alt'][0])
-    except Exception:
-        home = (data['lat'][0], data['lon'][0], data['alt'][0]) # Fallback: use first streamed sample
-    vel = ulog.get_dataset('vehicle_local_position').data
-    return data['timestamp'].astype(np.int64), data['lat'], data['lon'], data['alt'], home, vel['timestamp'].astype(np.int64), vel['vx'], vel['vy']
+def main() -> int:
+    usage = "Use as: python3 plot_logs.py /path/to/logs/folder"
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        print(usage)
+        return 0
 
-def read_bin(bin_file):
-    # Extract the lat, lon, alt trajectory from an ArduPilot .BIN log
-    from pymavlink import mavutil
-    connection = mavutil.mavlink_connection(bin_file)
-    t, lat, lon, alt = [], [], [], []
-    t_spd, vn, ve = [], [], []
-    while (msg := connection.recv_match(type=['POS', 'XKF1'])) is not None:
-        if msg.get_type() == 'POS':
-            t.append(msg.TimeUS)
-            lat.append(msg.Lat)
-            lon.append(msg.Lng)
-            alt.append(msg.Alt)
-        elif getattr(msg, 'C', 0) == 0: # XKF1 velocity from the first EKF core
-            t_spd.append(msg.TimeUS)
-            vn.append(msg.VN)
-            ve.append(msg.VE)
-    if not lat:
-        raise ValueError('No POS messages in log')
-    t, lat, lon, alt = np.array(t), np.array(lat), np.array(lon), np.array(alt)
-    t_spd, vn, ve = np.array(t_spd), np.array(vn), np.array(ve)
-    return t, lat, lon, alt, (lat[0], lon[0], alt[0]), t_spd, vn, ve # ArduPilot sets home at arming, when POS logging also starts
-
-if __name__ == '__main__':
     log_dir = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    if not os.path.isdir(log_dir):
+        print(f"Error: log directory not found: {log_dir}\n{usage}", file=sys.stderr)
+        return 2
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pymap3d
+
+    def read_ulg(ulg_file):
+        # Extract the lat, lon, alt trajectory and the saved home point from a PX4 .ulg log
+        from pyulog import ULog
+        ulog = ULog(ulg_file, ['vehicle_global_position', 'home_position', 'vehicle_local_position'])
+        data = ulog.get_dataset('vehicle_global_position').data
+        resets = data.get('lat_lon_reset_counter')
+        if resets is not None and resets[-1] != resets[0]:
+            print(f'Warning: {int(resets[-1]) - int(resets[0])} EKF lat/lon reset(s) during {os.path.basename(ulg_file)}')
+        try:
+            home = ulog.get_dataset('home_position').data
+            home = (home['lat'][0], home['lon'][0], home['alt'][0])
+        except Exception:
+            home = (data['lat'][0], data['lon'][0], data['alt'][0]) # Fallback: use first streamed sample
+        vel = ulog.get_dataset('vehicle_local_position').data
+        return data['timestamp'].astype(np.int64), data['lat'], data['lon'], data['alt'], home, vel['timestamp'].astype(np.int64), vel['vx'], vel['vy']
+
+    def read_bin(bin_file):
+        # Extract the lat, lon, alt trajectory from an ArduPilot .BIN log
+        from pymavlink import mavutil
+        connection = mavutil.mavlink_connection(bin_file)
+        t, lat, lon, alt = [], [], [], []
+        t_spd, vn, ve = [], [], []
+        while (msg := connection.recv_match(type=['POS', 'XKF1'])) is not None:
+            if msg.get_type() == 'POS':
+                t.append(msg.TimeUS)
+                lat.append(msg.Lat)
+                lon.append(msg.Lng)
+                alt.append(msg.Alt)
+            elif getattr(msg, 'C', 0) == 0: # XKF1 velocity from the first EKF core
+                t_spd.append(msg.TimeUS)
+                vn.append(msg.VN)
+                ve.append(msg.VE)
+        if not lat:
+            raise ValueError('No POS messages in log')
+        t, lat, lon, alt = np.array(t), np.array(lat), np.array(lon), np.array(alt)
+        t_spd, vn, ve = np.array(t_spd), np.array(vn), np.array(ve)
+        return t, lat, lon, alt, (lat[0], lon[0], alt[0]), t_spd, vn, ve # ArduPilot sets home at arming, when POS logging also starts
+
     log_files = sorted(glob.glob(os.path.join(log_dir, '*.ulg')) + glob.glob(os.path.join(log_dir, '*.BIN')))
     if not log_files:
-        sys.exit(f'No .ulg or .BIN logs found in {log_dir}')
+        print(f'No .ulg or .BIN logs found in {log_dir}', file=sys.stderr)
+        return 1
     fig = plt.figure(num='Flight Summary', figsize=(16, max(8, 3 * len(log_files))), layout='constrained')
     gs = fig.add_gridspec(2 * len(log_files), 2, width_ratios=[2, 1])
     ax = fig.add_subplot(gs[:, 0], projection='3d')
@@ -98,3 +109,8 @@ if __name__ == '__main__':
     print(f'Saved: {plot_file}')
     warnings.filterwarnings('ignore', message='constrained_layout not applied') # Only fires if the interactive window opens too small, the saved PNG is unaffected
     plt.show()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
