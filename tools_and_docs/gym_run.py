@@ -5,6 +5,7 @@ import time
 import itertools
 import subprocess
 import shutil
+import sys
 
 # from gymnasium.utils.env_checker import check_env
 # from stable_baselines3 import PPO
@@ -22,7 +23,7 @@ gym.register(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", type=str, default="step", choices=["step", "speedup", "vectorenv-speedup", "learn"])
-    parser.add_argument("--repetitions", type=int, default=1),
+    parser.add_argument("--repetitions", type=int, default=1, help="Speed-test run count"),
     parser.add_argument("--autopilot", type=str, default="px4", choices=["px4", "ardupilot"])
     parser.add_argument("--camera", action=argparse.BooleanOptionalAction, default=True, help="Enable/Disable Camera")
     parser.add_argument("--lidar", action=argparse.BooleanOptionalAction, default=True, help="Enable/Disable Lidar")
@@ -191,7 +192,8 @@ def main():
         # env.close()
 
     else:
-        print(f"Unknown mode: {args.mode}")
+        print(f"Error: unknown mode: {args.mode}", file=sys.stderr)
+        sys.exit(2)
 
 def configure_host_x11():
     if not shutil.which("xhost"):
