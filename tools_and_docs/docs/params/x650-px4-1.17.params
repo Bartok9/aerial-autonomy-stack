@@ -1,1 +1,6 @@
-TODO
+# Placeholder: onboard PX4 v1.17 parameter dump for X650 is not yet exported.
+# Use QGC or `param save` from SITL/HITL and replace this file with a real dump.
+# See x650-arducopter-4.6.params for the ArduPilot counterpart format.
+#
+# This file intentionally has no "Vehicle-Id Component-Id Name Value Type" rows
+# so it must not be treated as a loadable param set until a real export lands.
