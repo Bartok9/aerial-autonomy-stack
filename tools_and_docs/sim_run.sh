@@ -26,6 +26,24 @@ GND_CONTAINER="${GND_CONTAINER:-true}" # Options: true (default), false
 RTF="${RTF:-1.0}" # Real-time factor (default = 1.0), set to <=0.0 for as fast as possible execution
 START_AS_PAUSED="${START_AS_PAUSED:-false}" # Options: true, false (default)
 INSTANCE="${INSTANCE:-0}" # Integer ID to make docker network/container names unique as well as offsetting the second byte of the subnets (default = 0)
+
+# Fail closed: WORLD allowlist + non-negative integer drone counts
+ALLOWED_WORLDS="impalpable_greyness apple_orchard shibuya_crossing swiss_town waterworld"
+if ! echo " $ALLOWED_WORLDS " | grep -q " $WORLD "; then
+  echo "Error: WORLD='$WORLD' is not in allowlist: $ALLOWED_WORLDS" >&2
+  exit 2
+fi
+for var_name in NUM_QUADS NUM_VTOLS NUM_TAILS; do
+  val="${!var_name}"
+  if ! [[ "$val" =~ ^[0-9]+$ ]]; then
+    echo "Error: $var_name must be a non-negative integer (got '$val')" >&2
+    exit 2
+  fi
+done
+if (( NUM_QUADS + NUM_VTOLS + NUM_TAILS == 0 )); then
+  echo "Error: at least one aircraft required (NUM_QUADS+NUM_VTOLS+NUM_TAILS > 0)" >&2
+  exit 2
+fi
 # Note: the analysis/plotting env variable is used by this script on cleanup and NOT passed to any container
 PLOT="${PLOT:-false}" # Options: true, false (default)
 # Set unique subnets and container/network names based on INSTANCE
