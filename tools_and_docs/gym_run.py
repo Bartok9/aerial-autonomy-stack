@@ -5,6 +5,7 @@ import time
 import itertools
 import subprocess
 import shutil
+import sys
 
 # from gymnasium.utils.env_checker import check_env
 # from stable_baselines3 import PPO
@@ -147,7 +148,12 @@ def main():
         envs.close()
 
     elif args.mode == "learn":
-        print("TODO")
+        print(
+            "Error: --mode learn is not implemented yet "
+            "(see commented stable-baselines3 PPO prototype below).",
+            file=sys.stderr,
+        )
+        sys.exit(2)
         # env = gym.make("AASEnv-v0")
         # try:
         #     # check_env(env) # Throws warning
