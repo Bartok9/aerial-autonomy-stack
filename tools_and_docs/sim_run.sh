@@ -13,7 +13,7 @@ ODOM="${ODOM:-none}" # Options: none (default), openvins, fastlio, superodom, mi
 SIM_SUBNET="${SIM_SUBNET:-10.42}" # Simulation subnet (default = 10.42) Note: this is overridden if INSTANCE != 0
 AIR_SUBNET="${AIR_SUBNET:-10.22}" # Inter-vehicle subnet (default = 10.22) Note: this is overridden if INSTANCE != 0
 SIM_ID="${SIM_ID:-100}" # Last byte of the simulation container IP (default = 100)
-GROUND_ID="${GROUND_ID:-101}" # Last byte of the simulation container IP (default = 101)
+GROUND_ID="${GROUND_ID:-101}" # Last byte of the ground container IP (default = 101)
 #
 NUM_QUADS="${NUM_QUADS:-1}" # Number of quadcopters (default = 1)
 NUM_VTOLS="${NUM_VTOLS:-0}" # Number of VTOLs (default = 0)
