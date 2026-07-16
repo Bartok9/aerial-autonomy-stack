@@ -1,1 +1,3 @@
-TODO
+# Placeholder: PX4 1.17 Holybro X650 parameter dump not checked in yet.
+# Export onboard params (QGC/MAVLink) and replace this file when available.
+# See sister file x650-arducopter-4.6.params for the ArduPilot dump format.
