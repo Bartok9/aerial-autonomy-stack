@@ -105,7 +105,7 @@ flowchart TB
 
 ## Holybro X650 with 6X Autopilot Parameters
 
-Select parameters for the Holybro X650 kit; for full `.params` files examples, check folder [`params/`](/tools_and_docs/docs/params/)
+Select, flight-proven parameters for the Holybro X650 kit; for full `.params` files examples, check folder [`params/`](/tools_and_docs/docs/params/)
 
 ### PX4 Configuration
 
@@ -207,7 +207,7 @@ RSSI_CHANNEL        16              # Tells the flight controller to read Channe
 
 ## Triple Redundancy for RTL
 
-This configuration allows to trigger an emergency RTL through 3 independent channels:
+For safety, the proposed configuration allows to trigger an emergency RTL through 3 **independent** channels:
 
 1. Flight mode change using a switch on the RC (Boxer-R86C link)
 2. Flight mode change from QGC user interface (telemetry radio link)
