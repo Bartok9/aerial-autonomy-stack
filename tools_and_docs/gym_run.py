@@ -147,7 +147,7 @@ def main():
         envs.close()
 
     elif args.mode == "learn":
-        print("TODO")
+        print("learn mode is not implemented yet (PPO training remains commented out below).")
         # env = gym.make("AASEnv-v0")
         # try:
         #     # check_env(env) # Throws warning
