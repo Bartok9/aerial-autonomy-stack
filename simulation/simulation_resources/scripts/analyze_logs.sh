@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# This scrip allows to analyze ArduPilot logs using MAVExplorer and PX4 logs with flight_review
+# This script analyzes ArduPilot logs using MAVExplorer and PX4 logs with flight_review
 # Note that the 3D and map features of flight_review require to add API keys to _github_clones/flight_review/app/config_default.ini
 
 NUM_DRONES=$((NUM_QUADS + NUM_VTOLS + NUM_TAILS))
