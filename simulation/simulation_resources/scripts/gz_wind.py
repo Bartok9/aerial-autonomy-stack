@@ -12,9 +12,9 @@ from gz.msgs10.wind_pb2 import Wind
 
 def main():
     parser = argparse.ArgumentParser(description='Control Gazebo wind plugin')
-    parser.add_argument('--from_west', type=float, default=0.0, help='Number of seconds to advance the simulation')
-    parser.add_argument('--from_south', type=float, default=0.0, help='Number of seconds to advance the simulation')
-    parser.add_argument('--stop_wind', dest='stop_wind', action='store_true', help='Pause simulation after stepping (default)')
+    parser.add_argument('--from_west', type=float, default=0.0, help='Wind velocity from west toward east (m/s, Gazebo +X)')
+    parser.add_argument('--from_south', type=float, default=0.0, help='Wind velocity from south toward north (m/s, Gazebo +Y)')
+    parser.add_argument('--stop_wind', dest='stop_wind', action='store_true', help='Disable WindEffects (stop wind)')
     args = parser.parse_args()
     
     world_name = os.environ.get('WORLD', 'default')
