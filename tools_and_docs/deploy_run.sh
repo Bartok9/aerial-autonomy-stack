@@ -36,7 +36,7 @@ NUM_TAILS="${NUM_TAILS:-0}" # Number of tailsitters (default = 0)
 
 GROUND="${GROUND:-false}" # Options: true, false (default)
 if [[ "$GROUND" == "true" ]]; then
-  # This is a bit hacky, but allows to use the deploy_run.sh script for the ground container
+  # This is a bit hacky, but allows using the deploy_run.sh script for the ground container
   # Without GPU requirements: --device /dev/dri --gpus all --env NVIDIA_DRIVER_CAPABILITIES=all
   # Forcing HEADLESS to false, opening REMOTE_VIDEO_STREAMS and SSH_CONNECTIONS
   xhost +local:docker # Grant access to the X server
