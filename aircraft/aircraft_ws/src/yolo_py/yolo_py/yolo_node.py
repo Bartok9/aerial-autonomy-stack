@@ -468,7 +468,7 @@ def main(args=None):
     parser = argparse.ArgumentParser(description="YOLO ROS2 Inference Node.")
     parser.add_argument('--camera-id', type=int, default=0, help="Generic camera ID (0 for mono/left, 1 for right).")
     parser.add_argument('--headless', action='store_true', help="Run in headless mode.")
-    parser.add_argument('--hitl', action='store_true', help="Open camerafrom gz-sim for HITL.")
+    parser.add_argument('--hitl', action='store_true', help="Open camera from gz-sim for HITL.")
     parser.add_argument('--remote-video-streams', action='store_true', help="Send video streams to the ground container.")
     parser.add_argument('--hfov', type=float, default=100.0, help="Horizontal field of view in degrees.")
     parser.add_argument('--ros2-frame-publisher', action='store_true', help="Publish raw frames to ROS 2.")
