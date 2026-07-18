@@ -68,7 +68,7 @@ class YoloInferenceNode(Node):
     def run_inference_loop(self):
         # Acquire video stream
         if self.architecture == 'x86_64':
-            # # GPU pipeline: TODO NOT WORKING
+            # # GPU pipeline: TODO — not working (disabled)
             # gst_pipeline_string = (
             #     f"udpsrc port={self.udp_port} ! "
             #     "application/x-rtp, media=(string)video, encoding-name=(string)H264 ! "
