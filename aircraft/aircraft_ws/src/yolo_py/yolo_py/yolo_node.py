@@ -15,7 +15,7 @@ import math
 import platform
 
 from vision_msgs.msg import Detection2DArray, Detection2D, BoundingBox2D, ObjectHypothesis, ObjectHypothesisWithPose
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Bool
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
@@ -62,8 +62,15 @@ class YoloInferenceNode(Node):
         if self.ros2_frame_publisher:
             self.image_publisher = self.create_publisher(Image, f'camera_frames_{self.camera_id}', 10)
         self.bridge = CvBridge()
+
+        # Create subscribers
+        self.create_subscription(Bool, 'enable_remote_video_streams', self.enable_remote_video_streams_callback, 1)
         
         self.get_logger().info("YOLO inference started.")
+
+    def enable_remote_video_streams_callback(self, msg):
+        self.remote_video_streams = msg.data
+        self.get_logger().info(f"Remote video streams flag set to {self.remote_video_streams}")
 
     def run_inference_loop(self):
         # Acquire video stream
@@ -276,6 +283,7 @@ class YoloInferenceNode(Node):
 
             # Only on Jetson, stream to the ground station via UDP using GStreamer
             # On ports 5001, 5002, ..., and 5101, 5102, ..., based on DRONE_ID and self.camera_id
+            # To turn the stream off: ros2 topic pub --once /enable_remote_video_streams std_msgs/msg/Bool '{data: false}'
             if self.remote_video_streams and self.is_jetson: # Use cached boolean flag in loops
                 if not hasattr(self, 'gnd_stream_writer'):
                     h, w = frame.shape[:2]
@@ -296,7 +304,8 @@ class YoloInferenceNode(Node):
                     self.get_logger().info(f"Started UDP stream to {gnd_ip}:{port}")
                 if self.gnd_stream_writer.isOpened():
                     ros_time_sec = self.get_clock().now().nanoseconds / 1e9
-                    cv2.putText(frame, f"ROS T: {ros_time_sec:.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 1) # Timestamp frames
+                    time_label = f"ROS T: ..{ros_time_sec % 10000:07.2f}" # Last 4 integer digits and 2 decimals
+                    cv2.putText(frame, time_label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2) # Timestamp frames
                     self.gnd_stream_writer.write(frame)
 
         # Cleanup
@@ -312,7 +321,7 @@ class YoloInferenceNode(Node):
 
     def ros_spin_thread(self):
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.001) # This is only to get the simulation time from /clock
+            rclpy.spin_once(self, timeout_sec=0.001) # This is only to get the simulation time from /clock and updates on /enable_remote_video_streams
 
     def frame_capture_thread(self, cap, frame_queue, is_running):
         try:
