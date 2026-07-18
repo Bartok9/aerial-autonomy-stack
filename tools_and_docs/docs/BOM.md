@@ -207,7 +207,7 @@ RSSI_CHANNEL        16              # Tells the flight controller to read Channe
 
 ## Triple Redundancy for RTL
 
-For safety, the proposed configuration allows to trigger an emergency RTL through 3 **independent** channels:
+For safety, the proposed configuration allows triggering an emergency RTL through 3 **independent** channels:
 
 1. Flight mode change using a switch on the RC (Boxer-R86C link)
 2. Flight mode change from QGC user interface (telemetry radio link)
