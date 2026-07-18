@@ -76,7 +76,7 @@ ARDUPILOT_PHYSICS="    <physics name=\"2ms\" type=\"ignore\">\n      <max_step_s
 sed -i -e "/<physics/,/<\/physics>/c\\
 ${ARDUPILOT_PHYSICS}" "$OUTPUT_FILE"
 
-# This loops create the drone models (using the ArduPilot plugin on different ports starting from 9002) and adds them to the world SDF
+# This loop creates the drone models (using the ArduPilot plugin on different ports starting from 9002) and adds them to the world SDF
 ALL_MODELS_XML=""
 DRONE_ID=0
 # Loop for quads
