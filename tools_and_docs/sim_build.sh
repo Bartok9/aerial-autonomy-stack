@@ -59,7 +59,7 @@ for repo_info in "${REPOS[@]}"; do
     BRANCH=$(git branch --show-current)
     TAGS=$(git tag --points-at HEAD)
     echo "There is a clone of ${dir} on branch: ${BRANCH}, tags: [${TAGS}]"
-    # The script does not automatically pull changes for already cloned repos (as they should be on fixed tags)
+    # Skip git pull for already-cloned repos (tags are pinned; delete _github_clones to refresh)
     # This avoids breaking the Docker cache but it requires manually deleting the _github_clones folder for branch/tag updates
     # git pull
     # git submodule update --init --recursive --depth 1
