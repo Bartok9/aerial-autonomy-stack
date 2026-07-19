@@ -1,6 +1,6 @@
 # Setup Chrony
 
-> Follow these steps to let the Jetson synchronize their time to the `ground-image` computer over `AIR_SUBNET` when without internet connectivity (for Zenoh, etc.)
+> Follow these steps to let the Jetson synchronize its time to the `ground-image` computer over `AIR_SUBNET` when without internet connectivity (for Zenoh, etc.)
 
 ## On the Ground Station Computer
 
