@@ -853,7 +853,7 @@ void PX4Interface::do_takeoff(double alt, double yaw, bool is_vtol, double home_
             0.0,  // Unused
             0.0,  // Takeoff mode (specified) works with custom implementation of navigator_main.cpp and vtol_takeoff.cpp in PX4
             0.0,  // Unused
-            yaw,  // TODO: implement heading for multirotor takeoff
+            yaw, // TODO: implement heading for multirotor takeoff
             home_lat,  // Latitude
             home_lon,  // Longitude
             home_alt + alt,  // Altitude
