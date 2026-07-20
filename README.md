@@ -25,7 +25,7 @@ https://github.com/user-attachments/assets/57e5bc91-8bee-4bae-8f81-a9aacef471e7
 - Multi-**Jetson-in-the-loop (HITL) simulation** to test NVIDIA- and ARM-based on-board compute
 - Dual network to separate simulated sensors (`SIM_SUBNET`) and inter-vehicle comms (`AIR_SUBNET`)
 - [Zenoh](https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds) inter-vehicle ROS2 bridge
-- [PX4 Offboard](https://docs.px4.io/main/en/flight_modes/offboard.html) interface (e.g. CTBR/`VehicleRatesSetpoint` for agile, GNSS-denied flight) 
+- [PX4 Offboard](https://docs.px4.io/main/en/flight_modes/offboard.html) interface (e.g. CTBR/`VehicleRatesSetpoint` for agile, GNSS-denied flight)
 - [ArduPilot Guided](https://ardupilot.org/copter/docs/ac2_guidedmode.html) interface (i.e. `setpoint_velocity`, `setpoint_accel` references)
 - Logs analysis with [`flight_review`](https://github.com/PX4/flight_review) (`.ulg`), MAVExplorer (`.bin`), and [PlotJuggler](https://github.com/facontidavide/PlotJuggler) (`rosbag`)
 </details>
@@ -76,7 +76,7 @@ NUM_QUADS=1 NUM_VTOLS=1 WORLD=swiss_town RTF=3 PLOT=true ./sim_run.sh    # Start
 #  HEADLESS/CAMERA/LIDAR=true, false
 #  NUM_QUADS/NUM_VTOLS/NUM_TAILS=0, 1, ...
 #  WORLD=impalpable_greyness, apple_orchard, shibuya_crossing, swiss_town, waterworld
-#  RTF=1, 2, ... (real-time-factor, use 0 for "as fast as possible)
+#  RTF=1, 2, ... (real-time-factor, use 0 for "as fast as possible")
 #  INSTANCE=0, 1, ... (integer ID to run multiple parallel simulations)
 #  PLOT=true, false (requires pymavlink, pyulog, pymap3d)
 ```
@@ -163,7 +163,7 @@ cancellable_action "ros2 action send_goal /Drone${DRONE_ID}/offboard_action \
 > <details>
 > <summary>Develop within <b>live containers</b> <i>(click to expand)</i></summary>
 > 
-> Launching the `sim_run.sh` script with `DEV=true`, does **not** start the simulation and mounts folders, `[aircraft|ground]_ws/src` as volumes to more easily track, commit, push changes while building and testing them within the containers:
+> Launching the `sim_run.sh` script with `DEV=true` does **not** start the simulation and mounts folders, `[aircraft|ground]_ws/src` as volumes to more easily track, commit, push changes while building and testing them within the containers:
 > 
 > ```sh
 > cd aerial-autonomy-stack/tools_and_docs/
@@ -254,7 +254,7 @@ Set up a LAN on an arbitrary `SIM_SUBNET` with netmask `255.255.0.0` (e.g. `172.
 - One ground computer, with IP `[SIM_SUBNET].90.101`
 - `N` Jetson Baseboards with IPs `[SIM_SUBNET].90.1`, ..., `[SIM_SUBNET].90.N`
 
-> **Optionally**, set up a second LAN :`AIR_SUBNET` with netmask `255.255.0.0` (e.g. `10.223.x.x`) between:
+> **Optionally**, set up a second LAN `AIR_SUBNET` with netmask `255.255.0.0` (e.g. `10.223.x.x`) between:
 > 
 > - One ground computer, with IP `[AIR_SUBNET].90.101`
 > - `N` Jetson Baseboards with IPs `[AIR_SUBNET].90.1`, ..., `[AIR_SUBNET].90.N` 

@@ -170,7 +170,7 @@ void ArdupilotInterface::local_position_odom_callback(const Odometry::SharedPtr 
     velocity_[0] = msg->twist.twist.linear.x; // Body frame
     velocity_[1] = msg->twist.twist.linear.y;
     velocity_[2] = msg->twist.twist.linear.z;
-    angular_velocity_[0] = msg->twist.twist.angular.x; // TODO: double check
+    angular_velocity_[0] = msg->twist.twist.angular.x; // TODO: double-check
     angular_velocity_[1] = msg->twist.twist.angular.y;
     angular_velocity_[2] = msg->twist.twist.angular.z;
     // See also topics /mavros/local_position/velocity_body, /mavros/local_position/velocity_local
@@ -212,9 +212,9 @@ void ArdupilotInterface::home_position_home_callback(const HomePosition::SharedP
 void ArdupilotInterface::state_callback(const State::SharedPtr msg)
 {
     std::unique_lock<std::shared_mutex> lock(node_data_mutex_); // Use unique_lock for data writes
-    //add string for msg->mode, remove in_transition_mode_; in_transition_to_fw_
+    // add string for msg->mode, remove in_transition_mode_; in_transition_to_fw_
     armed_flag_ = msg->armed;
-    mav_state_ = msg->system_status; // MAV_STATE: MAV_STATE_CALIBRATING = 2, MAV_STATE_STANDBY = 3, MAV_STATE_ACTIVE = 4 (0: unkown, 5,6: failsafe, 8: flight termination, 1,7: boot)
+    mav_state_ = msg->system_status; // MAV_STATE: MAV_STATE_CALIBRATING = 2, MAV_STATE_STANDBY = 3, MAV_STATE_ACTIVE = 4 (0: unknown, 5,6: failsafe, 8: flight termination, 1,7: boot)
     ardupilot_mode_ = msg->mode; // See https://github.com/mavlink/mavros/blob/ros2/mavros_msgs/msg/State.msg
     if ((aircraft_fsm_state_ == ArdupilotInterfaceState::LANDED) && (mav_state_ == 3)) {
         aircraft_fsm_state_ = ArdupilotInterfaceState::STARTED; // Reset ArduPilot interface state when in standby after landing

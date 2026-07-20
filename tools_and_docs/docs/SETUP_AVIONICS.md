@@ -15,7 +15,7 @@ To upgrade to JetPack 6, download NVIDIA SDK Manager on an Ubuntu 22 (see [compa
 ```sh
 cd ~/Downloads
 sudo apt install ./sdkmanager_[version]-[build#]_amd64.deb # Currently version 2.4.0, build 13235
-sdkmanager                          # Log in with your https://developer.nvidia.com account 
+sdkmanager                          # Log in with your https://developer.nvidia.com account
 ```
 
 - Put the Holybro Jetson baseboard in recovery mode with the dedicated switch
@@ -51,7 +51,7 @@ sdkmanager                          # Log in with your https://developer.nvidia.
 ```sh
 sudo /opt/nvidia/jetson-io/jetson-io.py
 
-# Follow these steps: 
+# Follow these steps:
 #   "Configure Jetson 24pin CSI Connector"
 #   -> "Configure for compatible hardware"
 #   -> "Camera IMX219 Dual" (even if only using one)
@@ -63,7 +63,7 @@ sudo dmesg | grep -i imx219         # After reboot, this will show at least one 
 
 # Inspect device (e.g. /dev/video0) resolution and frame rate
 sudo apt update && sudo apt install -y v4l-utils
-v4l2-ctl --list-formats-ext -d /dev/video0 
+v4l2-ctl --list-formats-ext -d /dev/video0
 ```
 
 ## Install Docker Engine on Jetson Orin
@@ -162,7 +162,7 @@ docker run -it --rm --entrypoint bash -v ~/Downloads:/temp simulation-image -c \
   "cd /aas/github_apps/ardupilot && ./waf configure --board Pixhawk6X && ./waf plane && cp build/Pixhawk6X/bin/*.apj /temp/"
 ```
 
-To flash the newly created `.px4` or `.apj` file to your autopilot board, follow [QGC's User Guide](https://docs.qgroundcontrol.com/Stable_V5.0/en/qgc-user-guide/setup_view/firmware.html) 
+To flash the newly created `.px4` or `.apj` file to your autopilot board, follow [QGC's User Guide](https://docs.qgroundcontrol.com/Stable_V5.0/en/qgc-user-guide/setup_view/firmware.html)
 
 ## PX4: Configure 6X's Network and DDS Client
 
@@ -172,7 +172,7 @@ Connect the Pixhawk 6X to the ground station with the USB-C port next to the RJ-
 
 - Access QGroundControl -> "Analyze Tools" -> "MAVLink console"
 - Copy-and-paste the following commands (these will assign an IP to the PX4 autopilot (e.g., 10.10.1.33) and let the `uxrce_dds_client` connect to the Orin NX (e.g., on IP 10.10.1.44) using namespace `Drone1`)
-- Re-start the autopilot 
+- Re-start the autopilot
 
 ```sh
 # Configure DDS Client connection to the NX
