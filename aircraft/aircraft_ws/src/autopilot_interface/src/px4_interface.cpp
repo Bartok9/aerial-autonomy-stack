@@ -776,7 +776,7 @@ void PX4Interface::takeoff_handle_accepted(const std::shared_ptr<rclcpp_action::
 
         if (is_vtol == false) {
             if (current_fsm_state == PX4InterfaceState::STARTED) {
-                do_takeoff(takeoff_altitude, NAN, is_vtol, home_lat, home_lon, home_alt); // TODO: currently, there's no heading takeoff for multirotors
+                do_takeoff(takeoff_altitude, NAN, is_vtol, home_lat, home_lon, home_alt); // TODO: currently there's no heading takeoff for multirotors
                 {
                     std::unique_lock<std::shared_mutex> lock(node_data_mutex_);
                     aircraft_fsm_state_ = PX4InterfaceState::MC_TAKEOFF;
