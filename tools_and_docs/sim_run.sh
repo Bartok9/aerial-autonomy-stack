@@ -40,6 +40,13 @@ else
 fi
 echo "Desktop environment: $DESK_ENV"
 
+# Odometry stack allowlist (matches README options)
+ALLOWED_ODOM="none openvins fastlio superodom mimosa"
+if ! echo " $ALLOWED_ODOM " | grep -q " $ODOM "; then
+  echo "Error: ODOM=$ODOM is not in allowlist: $ALLOWED_ODOM" >&2
+  exit 2
+fi
+
 # Find the script's path
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
