@@ -5,6 +5,7 @@ import time
 import itertools
 import subprocess
 import shutil
+import sys
 
 # from gymnasium.utils.env_checker import check_env
 # from stable_baselines3 import PPO
@@ -147,7 +148,12 @@ def main():
         envs.close()
 
     elif args.mode == "learn":
-        print("TODO")
+        print(
+            "Error: --mode learn is not implemented yet "
+            "(PPO / Stable-Baselines3 path is still a stub).",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
         # env = gym.make("AASEnv-v0")
         # try:
         #     # check_env(env) # Throws warning
