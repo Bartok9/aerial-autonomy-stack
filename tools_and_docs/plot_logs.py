@@ -53,7 +53,12 @@ def read_bin(bin_file):
     return t, lat, lon, alt, (lat[0], lon[0], alt[0]), t_spd, vn, ve # ArduPilot sets home at arming, when POS logging also starts
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] in ('-h', '--help'):
+        print('Usage: python3 plot_logs.py [/path/to/logs/folder]')
+        sys.exit(0)
     log_dir = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    if not os.path.isdir(log_dir):
+        sys.exit(f'Not a directory: {log_dir}\nUsage: python3 plot_logs.py [/path/to/logs/folder]')
     log_files = sorted(glob.glob(os.path.join(log_dir, '*.ulg')) + glob.glob(os.path.join(log_dir, '*.BIN')))
     if not log_files:
         sys.exit(f'No .ulg or .BIN logs found in {log_dir}')
