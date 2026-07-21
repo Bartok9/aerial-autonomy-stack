@@ -40,6 +40,24 @@ else
 fi
 echo "Desktop environment: $DESK_ENV"
 
+# Early validation (fail closed before docker side effects)
+ALLOWED_WORLDS="impalpable_greyness apple_orchard shibuya_crossing swiss_town waterworld"
+if ! echo " $ALLOWED_WORLDS " | grep -q " $WORLD "; then
+  echo "Error: WORLD=$WORLD is not in allowlist: $ALLOWED_WORLDS" >&2
+  exit 2
+fi
+for _cnt_name in NUM_QUADS NUM_VTOLS NUM_TAILS INSTANCE; do
+  eval "_cnt_val=\$${_cnt_name}"
+  if ! [[ "$_cnt_val" =~ ^[0-9]+$ ]]; then
+    echo "Error: ${_cnt_name}=${_cnt_val} must be a non-negative integer" >&2
+    exit 2
+  fi
+done
+if ! [[ "$AUTOPILOT" == "px4" || "$AUTOPILOT" == "ardupilot" ]]; then
+  echo "Error: AUTOPILOT=$AUTOPILOT must be px4 or ardupilot" >&2
+  exit 2
+fi
+
 # Find the script's path
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
