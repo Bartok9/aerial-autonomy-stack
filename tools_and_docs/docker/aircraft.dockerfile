@@ -95,9 +95,10 @@ RUN apt-get update && \
     ros-humble-mavros ros-humble-mavros-extras ros-humble-mavros-msgs \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
-# Re-try install_geographiclib_datasets.sh if egm96-5.pgm was not downloaded
+# Re-try install_geographiclib_datasets.sh if egm96-5.pgm was not downloaded (timeout is ~10x the time needed on a healthy link)
 RUN for i in 1 2 3; do \
-        /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh; \
+        rm -f /usr/share/GeographicLib/geoids/egm96-5*; \
+        timeout 180 /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh; \
         test -r /usr/share/GeographicLib/geoids/egm96-5.pgm && break; \
         sleep 5; \
     done && test -r /usr/share/GeographicLib/geoids/egm96-5.pgm
