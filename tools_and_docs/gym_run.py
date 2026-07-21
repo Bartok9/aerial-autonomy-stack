@@ -29,6 +29,10 @@ def main():
     parser.add_argument("--num_quads", type=int, default=1)
     parser.add_argument("--gpu", action=argparse.BooleanOptionalAction, default=True, help="Enable/Disable GPU bindings")
     args = parser.parse_args()
+    if args.num_quads < 1:
+        parser.error("--num_quads must be >= 1")
+    if args.repetitions < 1:
+        parser.error("--repetitions must be >= 1")
 
     if args.mode == "step":
         env = gym.make(
