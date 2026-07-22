@@ -1,6 +1,7 @@
 import uuid
 import py_trees
 from mission import behaviors
+from mission.mission_actions import is_known_mission_action
 
 def create_mission_tree(node_cfg, ros_node):
     # Recursively parse a YAML dictionary node into a py_trees object
@@ -27,7 +28,11 @@ def create_mission_tree(node_cfg, ros_node):
         elif action == 'check_blackboard':
             return behaviors.CheckBlackboardBehavior(name, ros_node, params)
         else:
-            ros_node.get_logger().error(f"Unknown action: {action}")
+            # Keep KNOWN_ACTIONS in mission_actions.py in sync with branches above
+            if not is_known_mission_action(action):
+                ros_node.get_logger().error(f"Unknown action: {action}")
+            else:
+                ros_node.get_logger().error(f"Unhandled known action branching: {action}")
             return py_trees.behaviours.Failure(name=f"Unknown_{action}")
 
     # Is it a composite node (a sequence or fallback/selector branch)?
