@@ -50,8 +50,8 @@ if [[ -n "$NUM_DRONES" && "$NUM_DRONES" =~ ^[0-9]+$ ]]; then
         echo "You can view the imported logs at: http://${SIM_SUBNET}.90.${SIM_ID}:5006/browse"
 
     else
-        echo "Unknown AUTOPILOT"
-        exit 0
+        echo "Error: Unknown AUTOPILOT='$AUTOPILOT' (expected px4 or ardupilot)" >&2
+        exit 1
     fi
 
 else
