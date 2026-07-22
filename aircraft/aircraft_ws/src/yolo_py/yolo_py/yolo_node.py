@@ -14,6 +14,11 @@ import time
 import math
 import platform
 
+try:
+    from yolo_py.yolo_cli_bounds import validate_camera_id, validate_hfov_deg
+except ImportError:  # script-style path
+    from yolo_cli_bounds import validate_camera_id, validate_hfov_deg
+
 from vision_msgs.msg import Detection2DArray, Detection2D, BoundingBox2D, ObjectHypothesis, ObjectHypothesisWithPose
 from std_msgs.msg import Header, Bool
 from sensor_msgs.msg import Image
@@ -483,6 +488,11 @@ def main(args=None):
     parser.add_argument('--ros2-frame-publisher', action='store_true', help="Publish raw frames to ROS 2.")
     parser.add_argument('--no-inference', action='store_true', help="Disable YOLO inference and only run camera acquisition/streaming.")
     cli_args, ros_args = parser.parse_known_args()
+    try:
+        validate_camera_id(cli_args.camera_id)
+        validate_hfov_deg(cli_args.hfov)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     rclpy.init(args=ros_args)
 
