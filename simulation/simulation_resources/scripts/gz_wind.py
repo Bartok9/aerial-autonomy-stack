@@ -4,6 +4,7 @@ Use as:
     python3 gz_wind.py --stop_wind
 """
 import os
+import math
 import time
 import argparse
 import gz.transport13
@@ -16,7 +17,10 @@ def main():
     parser.add_argument('--from_south', type=float, default=0.0, help='Wind velocity from south toward north (m/s, Gazebo +Y)')
     parser.add_argument('--stop_wind', dest='stop_wind', action='store_true', help='Disable WindEffects (stop wind)')
     args = parser.parse_args()
-    
+    for name, val in (('from_west', args.from_west), ('from_south', args.from_south)):
+        if not math.isfinite(val):
+            parser.error(f'--{name} must be a finite number (got {val!r})')
+
     world_name = os.environ.get('WORLD', 'default')
 
     gz_node = gz.transport13.Node()
