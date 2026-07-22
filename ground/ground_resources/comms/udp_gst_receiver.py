@@ -2,14 +2,19 @@ import cv2
 import argparse
 import sys
 
+from udp_gst_validate import validate_udp_port, validate_window_name
+
 def main():
     parser = argparse.ArgumentParser(description="Receive UDP GStreamer video and display it.")
     parser.add_argument('--port', type=int, required=True, help="UDP port to listen on.")
     parser.add_argument('--name', type=str, required=True, help="Window name to display.")
     args = parser.parse_args()
 
-    port = args.port
-    name = args.name
+    try:
+        port = validate_udp_port(args.port)
+        name = validate_window_name(args.name)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     pipeline = (
         f"udpsrc port={port} ! "
