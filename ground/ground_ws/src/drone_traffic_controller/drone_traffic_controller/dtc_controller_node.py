@@ -1,4 +1,8 @@
 import os, json, math, rclpy
+try:
+    from drone_traffic_controller.count_env import parse_nonneg_int_env
+except ImportError:
+    from count_env import parse_nonneg_int_env
 from rclpy.node import Node
 from std_msgs.msg import String
 from ground_system_msgs.msg import SwarmObs
@@ -32,9 +36,9 @@ class DTCController(Node):
         self.sub = self.create_subscription(SwarmObs, '/tracks', self.track_cb, 10)
         self.timer = self.create_timer(1.0, self.loop)
 
-        self.nq = int(os.environ.get('num_quads', os.environ.get('NUM_QUADS', '1')))
-        self.nv = int(os.environ.get('num_vtols', os.environ.get('NUM_VTOLS', '0')))
-        self.nt = int(os.environ.get('num_tails', os.environ.get('NUM_TAILS', '0')))
+        self.nq = parse_nonneg_int_env('num_quads', 'NUM_QUADS', default='1')
+        self.nv = parse_nonneg_int_env('num_vtols', 'NUM_VTOLS', default='0')
+        self.nt = parse_nonneg_int_env('num_tails', 'NUM_TAILS', default='0')
         self.quad_ids = list(range(1, self.nq + 1))
         self.vtol_ids = list(range(self.nq + 1, self.nq + self.nv + 1))
         self.tail_ids = list(range(self.nq + self.nv + 1, self.nq + self.nv + self.nt + 1))
