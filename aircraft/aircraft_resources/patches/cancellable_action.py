@@ -64,6 +64,14 @@ def main(args=None):
 
     # Parse the action command
     parts = shlex.split(cli_args.command)
+    # Expected: ros2 action send_goal <name> <type> <goal>
+    if len(parts) < 6:
+        print(
+            "Error: command must look like "
+            "'ros2 action send_goal <action_name> <action_type> <goal>' "
+            f"(got {len(parts)} tokens)"
+        )
+        return
     action_name = parts[3]
     action_type_str = parts[4]
     goal_str = parts[5]
