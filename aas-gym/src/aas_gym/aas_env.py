@@ -11,6 +11,11 @@ import concurrent.futures
 
 from docker.types import DeviceRequest
 
+try:
+    from aas_gym.aas_config import validate_aas_config
+except ImportError:
+    from aas_config import validate_aas_config
+
 
 class AASEnv(gym.Env):
     metadata = {"render_modes": ["human", "ansi"]}
@@ -27,6 +32,15 @@ class AASEnv(gym.Env):
             gpu: bool=True
         ):
         super().__init__()
+
+        validate_aas_config(
+            instance=instance,
+            gym_freq_hz=gym_freq_hz,
+            autopilot=autopilot,
+            odom=odom,
+            num_quads=num_quads,
+            render_mode=render_mode,
+        )
 
         self.GYM_FREQ_HZ = gym_freq_hz
         self.GYM_INIT_DURATION = 80.0  # Seconds to run unpaused during reset (seconds)
