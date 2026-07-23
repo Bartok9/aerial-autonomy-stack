@@ -1,4 +1,4 @@
-import os, json, math, rclpy
+import json, math, rclpy
 try:
     from drone_traffic_controller.count_env import parse_nonneg_int_env
 except ImportError:
